@@ -1,0 +1,7 @@
+{
+  "name": "Sphere Strike AI Knockout",
+  "description": "Sphere Strike AI Knockout - High-octane 1st Person Battle Royale with expansive island POIs, realistic gunplay, 4-piece building, squad multiplayer, S-Token armory and vehicle driving.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
