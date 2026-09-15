@@ -22,6 +22,7 @@ import {
   Wifi,
   WifiOff,
   Zap,
+  RotateCw,
 } from 'lucide-react';
 
 interface FortniteLobbyProps {
@@ -54,7 +55,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   const [isReady, setIsReady] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [copied, setCopied] = useState(false);
-  const [party, setParty] = useState<PartyState>(multiplayerClient.partyState);
+  const [party, setParty] = useState<PartyState>(() => ({ ...multiplayerClient.partyState }));
   const [partyError, setPartyError] = useState<string | null>(null);
 
   const currentSkin =
@@ -71,15 +72,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     };
     window.addEventListener('click', startAudioOnInteraction);
 
-    // Automatically establish default party code for the player
-    if (!party.code) {
-      const defaultCode = 'FN-' + Math.floor(1000 + Math.random() * 9000);
-      multiplayerClient.createParty(
-        { name: profile.name, skinId: profile.selectedSkin, level: profile.level },
-        defaultCode
-      );
-    }
-
+    // Setup handlers immediately
     multiplayerClient.setHandlers({
       onPartyUpdate: (updatedParty) => {
         setParty({ ...updatedParty });
@@ -103,10 +96,17 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
       },
     });
 
+    // Synchronize active player and room code
+    multiplayerClient.connectWithCode(party.code || multiplayerClient.partyState.code, {
+      name: profile.name,
+      skinId: profile.selectedSkin,
+      level: profile.level,
+    });
+
     return () => {
       window.removeEventListener('click', startAudioOnInteraction);
     };
-  }, [profile.name, profile.selectedSkin, profile.level, party.code, onStartMatch]);
+  }, [profile.name, profile.selectedSkin, profile.level, onStartMatch]);
 
   const toggleMusic = () => {
     if (isMusicPlaying) {
@@ -119,18 +119,31 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   };
 
   const handleCopyCode = () => {
-    if (party.code) {
-      navigator.clipboard.writeText(party.code);
+    const codeToCopy = party.code || multiplayerClient.partyState.code;
+    if (codeToCopy) {
+      navigator.clipboard.writeText(codeToCopy);
       setCopied(true);
       fortniteAudio.playUiClick();
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
+  const handleGenerateNewCode = () => {
+    const newCode = multiplayerClient.generateNewCode({
+      name: profile.name,
+      skinId: profile.selectedSkin,
+      level: profile.level,
+    });
+    setParty((prev) => ({ ...prev, code: newCode }));
+    fortniteAudio.playUiClick();
+  };
+
   const handleJoinParty = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!joinCodeInput.trim()) return;
-    multiplayerClient.connectWithCode(joinCodeInput.trim().toUpperCase(), {
+    const cleanCode = joinCodeInput.trim().toUpperCase();
+    if (!cleanCode) return;
+    setParty((prev) => ({ ...prev, code: cleanCode }));
+    multiplayerClient.connectWithCode(cleanCode, {
       name: profile.name,
       skinId: profile.selectedSkin,
       level: profile.level,
@@ -585,13 +598,23 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
             <div className="p-3 rounded-2xl bg-black/60 border border-white/10 flex flex-col gap-1.5">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="text-slate-400 font-bold uppercase tracking-wider">YOUR ROOM CODE</span>
-                <span className="text-cyan-400 font-mono text-[10px]">SHARE WITH ANYONE</span>
+                <span className="text-cyan-400 font-mono text-[10px]">ONLINE & READY</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="flex-1 px-3 py-2 rounded-xl bg-slate-950/80 border border-amber-500/40 text-amber-300 font-mono font-black text-base tracking-widest text-center shadow-inner">
-                  {party.code || 'CONNECTING...'}
+                <div className="flex-1 px-3 py-2 rounded-xl bg-slate-950/80 border border-amber-500/40 text-amber-300 font-mono font-black text-base tracking-widest text-center shadow-inner select-all">
+                  {party.code || multiplayerClient.partyState.code || 'ROYALE-LIVE'}
                 </div>
                 <button
+                  type="button"
+                  onClick={handleGenerateNewCode}
+                  className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1 transition-all border border-white/10 active:scale-95 cursor-pointer"
+                  title="Generate a new room code"
+                >
+                  <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>NEW</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleCopyCode}
                   className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
                   title="Copy room code to clipboard"
@@ -601,7 +624,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
-                Share this code with anyone online or open in another window to play together in the same game!
+                Share this code with anyone online or open another tab to join the exact same match!
               </p>
             </div>
 

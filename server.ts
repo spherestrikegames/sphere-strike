@@ -130,9 +130,20 @@ async function startServer() {
   });
 
   app.get('/api/parties/:code', (req, res) => {
-    const room = rooms.get(req.params.code.toUpperCase());
+    const upperCode = req.params.code.toUpperCase();
+    let room = rooms.get(upperCode);
     if (!room) {
-      return res.status(404).json({ error: 'Party code not found' });
+      room = {
+        code: upperCode,
+        hostId: 'host',
+        createdAt: Date.now(),
+        players: new Map(),
+        gameState: 'lobby',
+        seed: Math.floor(Math.random() * 1000000),
+        events: [],
+        eventSeq: 0,
+      };
+      rooms.set(upperCode, room);
     }
     res.json(getPartyPayload(room));
   });
@@ -191,8 +202,21 @@ async function startServer() {
   app.post('/api/parties/poll', (req, res) => {
     const { code, playerId, sinceEventId = 0, transform } = req.body || {};
     if (!code) return res.status(400).json({ error: 'Missing code' });
-    const room = rooms.get(code.toUpperCase());
-    if (!room) return res.status(404).json({ error: 'Room not found' });
+    const upperCode = code.toUpperCase();
+    let room = rooms.get(upperCode);
+    if (!room) {
+      room = {
+        code: upperCode,
+        hostId: playerId || `p_${Date.now()}`,
+        createdAt: Date.now(),
+        players: new Map(),
+        gameState: 'lobby',
+        seed: Math.floor(Math.random() * 1000000),
+        events: [],
+        eventSeq: 0,
+      };
+      rooms.set(upperCode, room);
+    }
 
     if (playerId && room.players.has(playerId)) {
       const p = room.players.get(playerId)!;
@@ -218,8 +242,21 @@ async function startServer() {
   app.post('/api/parties/action', (req, res) => {
     const { code, playerId, action } = req.body || {};
     if (!code || !action) return res.status(400).json({ error: 'Missing code or action' });
-    const room = rooms.get(code.toUpperCase());
-    if (!room) return res.status(404).json({ error: 'Room not found' });
+    const upperCode = code.toUpperCase();
+    let room = rooms.get(upperCode);
+    if (!room) {
+      room = {
+        code: upperCode,
+        hostId: playerId || `p_${Date.now()}`,
+        createdAt: Date.now(),
+        players: new Map(),
+        gameState: 'lobby',
+        seed: Math.floor(Math.random() * 1000000),
+        events: [],
+        eventSeq: 0,
+      };
+      rooms.set(upperCode, room);
+    }
 
     const evt = publishRoomEvent(room, 'player:action', { action }, playerId);
     res.json({ success: true, eventId: evt.id });
@@ -229,8 +266,21 @@ async function startServer() {
   app.post('/api/parties/start', (req, res) => {
     const { code } = req.body || {};
     if (!code) return res.status(400).json({ error: 'Missing code' });
-    const room = rooms.get(code.toUpperCase());
-    if (!room) return res.status(404).json({ error: 'Room not found' });
+    const upperCode = code.toUpperCase();
+    let room = rooms.get(upperCode);
+    if (!room) {
+      room = {
+        code: upperCode,
+        hostId: 'host',
+        createdAt: Date.now(),
+        players: new Map(),
+        gameState: 'lobby',
+        seed: Math.floor(Math.random() * 1000000),
+        events: [],
+        eventSeq: 0,
+      };
+      rooms.set(upperCode, room);
+    }
 
     room.gameState = 'playing';
     if (!room.seed) room.seed = Math.floor(Math.random() * 1000000);

@@ -11,17 +11,21 @@ export type MultiplayerEventHandler = {
   onConnectionChange?: (connected: boolean) => void;
 };
 
+function generateInitialCode(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let rand = '';
+  for (let i = 0; i < 4; i++) {
+    rand += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return `ROYALE-${rand}`;
+}
+
 export class MultiplayerClient {
   private ws: WebSocket | null = null;
   private handlers: MultiplayerEventHandler = {};
-  public partyState: PartyState = {
-    code: '',
-    isHost: true,
-    members: [],
-    isConnected: true, // Optimistically online
-    error: null,
-  };
   public myPlayerId: string = `p_${Math.floor(1000 + Math.random() * 9000)}`;
+
+  public partyState: PartyState;
 
   private transport: 'ws' | 'http' | 'mesh' = 'http';
   private pollTimer: any = null;
@@ -29,7 +33,6 @@ export class MultiplayerClient {
   private channel: BroadcastChannel | null = null;
   private isGameRunning: boolean = false;
   private pendingSyncData: Partial<RemotePlayerState> | null = null;
-  private syncTimer: any = null;
   private activePlayerInfo = {
     name: 'Player',
     skinId: 'jonesy',
@@ -40,33 +43,68 @@ export class MultiplayerClient {
     this.handlers = handlers;
     this.myPlayerId = `p_${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Initialize cross-tab / local mesh broadcast
+    const initialCode = generateInitialCode();
+    this.partyState = {
+      code: initialCode,
+      isHost: true,
+      members: [
+        {
+          id: this.myPlayerId,
+          name: 'Player',
+          skinId: 'jonesy',
+          level: 1,
+          isReady: true,
+          isHost: true,
+        },
+      ],
+      isConnected: true,
+      error: null,
+    };
+
+    // Cross-tab / local mesh broadcast
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
         this.channel = new BroadcastChannel('fortnite_royale_network');
         this.channel.onmessage = (event) => {
           if (!event.data) return;
           const { type, senderId, ...rest } = event.data;
-          if (senderId === this.myPlayerId) return; // ignore own broadcast
+          if (senderId === this.myPlayerId) return;
           this.handleIncomingEvent(type, rest, senderId);
         };
       } catch (e) {
-        console.warn('BroadcastChannel not supported', e);
+        console.warn('BroadcastChannel not available', e);
       }
     }
 
-    // Auto-connect immediately
+    // Auto-connect and join initial room
     this.connect();
     this.startPollingLoop();
   }
 
   public setHandlers(handlers: MultiplayerEventHandler) {
     this.handlers = { ...this.handlers, ...handlers };
+    // Deliver immediate state to caller
+    if (this.handlers.onPartyUpdate) {
+      this.handlers.onPartyUpdate(this.partyState);
+    }
+    if (this.handlers.onConnectionChange) {
+      this.handlers.onConnectionChange(true);
+    }
   }
 
   public setGameRunning(running: boolean) {
     this.isGameRunning = running;
     this.startPollingLoop();
+  }
+
+  public generateNewCode(playerInfo?: { name: string; skinId: string; level: number }): string {
+    const newCode = generateInitialCode();
+    if (playerInfo) {
+      this.connectWithCode(newCode, playerInfo);
+    } else {
+      this.connectWithCode(newCode, this.activePlayerInfo);
+    }
+    return newCode;
   }
 
   /**
@@ -80,7 +118,7 @@ export class MultiplayerClient {
       this.handlers.onConnectionChange(true);
     }
 
-    // Probe backend HTTP API
+    // Background probe HTTP API
     try {
       const res = await fetch('/api/health', { method: 'GET', cache: 'no-store' });
       if (res.ok) {
@@ -88,13 +126,17 @@ export class MultiplayerClient {
         this.handlers.onConnectionChange?.(true);
       }
     } catch {
-      // Backend probe failed (e.g. static site), fallback to mesh/local
       this.transport = 'mesh';
     }
 
-    // Try WebSocket connection in background
+    // Background WebSocket attempt
     if (typeof window !== 'undefined') {
       this.tryWebSocket();
+    }
+
+    // Register active room with server
+    if (this.partyState.code) {
+      this.registerRoomWithServer(this.partyState.code);
     }
 
     return true;
@@ -119,7 +161,6 @@ export class MultiplayerClient {
         this.partyState.error = null;
         this.handlers.onConnectionChange?.(true);
 
-        // If we have an active room, join it over WS
         if (this.partyState.code) {
           socket.send(
             JSON.stringify({
@@ -144,17 +185,15 @@ export class MultiplayerClient {
       };
 
       socket.onerror = () => {
-        // Fallback to HTTP polling seamlessly
         this.transport = 'http';
         this.ws = null;
       };
 
       socket.onclose = () => {
-        // Fallback to HTTP polling seamlessly
         this.transport = 'http';
         this.ws = null;
       };
-    } catch (err) {
+    } catch {
       this.transport = 'http';
       this.ws = null;
     }
@@ -165,7 +204,7 @@ export class MultiplayerClient {
       clearInterval(this.pollTimer);
     }
 
-    const interval = this.isGameRunning ? 100 : 700;
+    const interval = this.isGameRunning ? 90 : 600;
 
     this.pollTimer = setInterval(() => {
       this.pollHttpUpdates();
@@ -210,7 +249,32 @@ export class MultiplayerClient {
         }
       }
     } catch {
-      // Offline / transient network glitch
+      // Mesh/local fallback
+    }
+  }
+
+  private async registerRoomWithServer(code: string) {
+    try {
+      const res = await fetch('/api/parties/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          player: { id: this.myPlayerId, ...this.activePlayerInfo },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.room) {
+          this.updatePartyFromPayload(data.room);
+        }
+        if (data.lastEventId) {
+          this.lastEventId = data.lastEventId;
+        }
+      }
+    } catch {
+      // Mesh fallback
     }
   }
 
@@ -224,7 +288,6 @@ export class MultiplayerClient {
       isHost: p.id === roomPayload.hostId,
     }));
 
-    // Ensure local player is included in members if not yet present
     if (!members.some((m) => m.id === this.myPlayerId)) {
       members.unshift({
         id: this.myPlayerId,
@@ -349,7 +412,7 @@ export class MultiplayerClient {
   }
 
   public async connectWithCode(code: string, playerInfo: { name: string; skinId: string; level: number }) {
-    const cleanCode = (code || '').trim().toUpperCase() || 'FN-ROYALE';
+    const cleanCode = (code || '').trim().toUpperCase() || generateInitialCode();
     this.activePlayerInfo = { ...playerInfo };
 
     // Update local state immediately
@@ -391,29 +454,7 @@ export class MultiplayerClient {
     }
 
     // Always send HTTP Join
-    try {
-      const res = await fetch('/api/parties/join', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: cleanCode,
-          player: { id: this.myPlayerId, ...playerInfo },
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.room) {
-          this.updatePartyFromPayload(data.room);
-        }
-        if (data.lastEventId) {
-          this.lastEventId = data.lastEventId;
-        }
-      }
-    } catch {
-      // Local fallback
-    }
-
+    await this.registerRoomWithServer(cleanCode);
     this.startPollingLoop();
   }
 
@@ -436,7 +477,7 @@ export class MultiplayerClient {
   }
 
   public async createParty(playerInfo: { name: string; skinId: string; level: number }, customCode?: string) {
-    const code = customCode || 'FN-' + Math.floor(1000 + Math.random() * 9000);
+    const code = customCode || generateInitialCode();
     await this.connectWithCode(code, playerInfo);
   }
 
@@ -479,7 +520,6 @@ export class MultiplayerClient {
   }
 
   public sendPlayerSync(data: Partial<RemotePlayerState>) {
-    // Send over WebSocket if available
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
@@ -488,11 +528,9 @@ export class MultiplayerClient {
         })
       );
     } else {
-      // Buffer for next HTTP poll
       this.pendingSyncData = { ...this.pendingSyncData, ...data };
     }
 
-    // Broadcast across local browser windows
     this.channel?.postMessage({
       type: 'player:sync',
       senderId: this.myPlayerId,
@@ -501,7 +539,6 @@ export class MultiplayerClient {
   }
 
   public sendPlayerAction(action: any) {
-    // Send over WebSocket
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
@@ -511,7 +548,6 @@ export class MultiplayerClient {
       );
     }
 
-    // Send over HTTP API
     if (this.partyState.code) {
       fetch('/api/parties/action', {
         method: 'POST',
@@ -524,7 +560,6 @@ export class MultiplayerClient {
       }).catch(() => {});
     }
 
-    // Broadcast to local browser windows
     this.channel?.postMessage({
       type: 'player:action',
       senderId: this.myPlayerId,
