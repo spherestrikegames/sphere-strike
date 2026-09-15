@@ -318,7 +318,12 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
         {/* Left: Alive Players, Squad Team Badge & Eliminations */}
         <div className="flex flex-col gap-2">
           {/* Team Badge */}
-          {gameMode === '1v1_build_fight' ? (
+          {gameMode === 'battle_royale' ? (
+            <div className="flex items-center gap-2 bg-gradient-to-r from-amber-600 to-red-600 backdrop-blur-md px-3 py-1 rounded-xl border border-amber-400 text-white font-black text-xs shadow-lg shadow-amber-900/40">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>BATTLE ROYALE • ONLINE</span>
+            </div>
+          ) : gameMode === '1v1_build_fight' ? (
             <div className="flex items-center gap-2 bg-gradient-to-r from-amber-600 to-rose-600 backdrop-blur-md px-3 py-1 rounded-xl border border-amber-400 text-white font-black text-xs shadow-lg">
               <Swords className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
               <span>1V1 BUILD FIGHT ARENA</span>

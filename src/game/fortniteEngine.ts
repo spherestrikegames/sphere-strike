@@ -889,7 +889,7 @@ export class FortniteEngine {
           remote = {
             state: {
               id: playerId,
-              name: data.name || 'Party Member',
+              name: data.name || 'Online Player',
               skinId,
               x: data.x || 0,
               y: data.y || 2,
@@ -907,13 +907,15 @@ export class FortniteEngine {
             },
             rig,
           };
-          const nameTag = createNameTagSprite(remote.state.name, false, 'ALPHA', 1.0, 0.5);
+          const nameTag = createNameTagSprite(remote.state.name, false, 'OMEGA', 1.0, 0.5);
           rig.root.add(nameTag);
           this.remotePlayers.set(playerId, remote);
+          this.updatePlayersLeftCount();
         }
 
         const prevX = remote.state.x;
         const prevZ = remote.state.z;
+        if (data.name !== undefined) remote.state.name = data.name;
         if (data.x !== undefined) remote.state.x = data.x;
         if (data.y !== undefined) remote.state.y = data.y;
         if (data.z !== undefined) remote.state.z = data.z;
@@ -921,11 +923,23 @@ export class FortniteEngine {
         if (data.pitch !== undefined) remote.state.pitch = data.pitch;
         if (data.health !== undefined) remote.state.health = data.health;
         if (data.shield !== undefined) remote.state.shield = data.shield;
+        if (data.isAlive !== undefined) {
+          remote.state.isAlive = data.isAlive;
+          remote.rig.root.visible = data.isAlive;
+        }
 
         const isMoving = Math.hypot(remote.state.x - prevX, remote.state.z - prevZ) > 0.05;
         remote.rig.root.position.set(remote.state.x, remote.state.y, remote.state.z);
         remote.rig.root.rotation.y = remote.state.rotY + Math.PI;
         remote.rig.updateAnimation(performance.now() * 0.001, isMoving, false, false);
+      },
+      onPlayerLeave: (playerId) => {
+        const remote = this.remotePlayers.get(playerId);
+        if (remote) {
+          this.scene.remove(remote.rig.root);
+          this.remotePlayers.delete(playerId);
+          this.updatePlayersLeftCount();
+        }
       },
       onPlayerAction: (playerId, action) => {
         if (action.type === 'shoot') {
@@ -941,9 +955,73 @@ export class FortniteEngine {
             this.buildingPieces.set(piece.id, { piece, mesh });
             fortniteAudio.playBuildPlace(piece.material);
           }
+        } else if (action.type === 'damage_player') {
+          if (action.targetId === multiplayerClient.myPlayerId) {
+            this.applyDamageFromRemote(action.damage, action.isHeadshot, action.attackerName, action.weaponName);
+          }
+        } else if (action.type === 'player_eliminated') {
+          this.callbacks.onElimination({
+            id: 'elim_' + Date.now(),
+            killer: action.attackerName,
+            victim: action.victimName,
+            weaponName: action.weaponName,
+            isHeadshot: action.isHeadshot,
+            time: Date.now(),
+          });
+          const remote = this.remotePlayers.get(action.victimId);
+          if (remote) {
+            remote.state.isAlive = false;
+            remote.rig.root.visible = false;
+            this.spawnDroppedSupplies(remote.state.x, remote.state.y, remote.state.z);
+          }
+          this.updatePlayersLeftCount();
         }
       },
     });
+  }
+
+  public updatePlayersLeftCount() {
+    const aliveBots = this.bots.filter((b) => b.isAlive).length;
+    const aliveRemotes = Array.from(this.remotePlayers.values()).filter((r) => r.state.isAlive).length;
+    const isPlayerAlive = !this.isGameOver && this.health > 0 ? 1 : 0;
+    const total = aliveBots + aliveRemotes + isPlayerAlive;
+    this.callbacks.onPlayersLeftChange(total);
+
+    if (aliveBots === 0 && aliveRemotes === 0 && isPlayerAlive === 1 && (this.bots.length > 0 || this.remotePlayers.size > 0)) {
+      this.triggerVictoryRoyale();
+    }
+  }
+
+  public applyDamageFromRemote(dmg: number, isHeadshot: boolean, attackerName: string, weaponName: string) {
+    if (this.isGameOver || this.health <= 0) return;
+    const hadShield = this.shield > 0;
+    if (this.shield > 0) {
+      if (this.shield >= dmg) {
+        this.shield -= dmg;
+      } else {
+        const rem = dmg - this.shield;
+        this.shield = 0;
+        this.health = Math.max(0, this.health - rem);
+      }
+    } else {
+      this.health = Math.max(0, this.health - dmg);
+    }
+    this.damageTaken += dmg;
+    this.callbacks.onHealthChange(Math.max(0, Math.round(this.health)), Math.max(0, Math.round(this.shield)));
+    this.callbacks.onDamageTaken();
+    fortniteAudio.playHitmarker(isHeadshot, hadShield);
+
+    if (this.health <= 0) {
+      multiplayerClient.sendPlayerAction({
+        type: 'player_eliminated',
+        victimId: multiplayerClient.myPlayerId,
+        victimName: this.profile.name,
+        attackerName: attackerName || 'Online Player',
+        weaponName: weaponName || 'Assault Rifle',
+        isHeadshot,
+      });
+      this.triggerEliminated();
+    }
   }
 
   // --- CONTROLS & POINTER LOCK ---
@@ -978,6 +1056,10 @@ export class FortniteEngine {
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('contextmenu', this.onContextMenu);
     window.removeEventListener('resize', this.onWindowResize);
+    for (const remote of this.remotePlayers.values()) {
+      this.scene.remove(remote.rig.root);
+    }
+    this.remotePlayers.clear();
     this.renderer.dispose();
   }
 
@@ -1394,8 +1476,101 @@ export class FortniteEngine {
       }
     }
 
-    // Calculate pellet hits: within 1-foot radius -> full 100% maximum damage output
-    if (primaryBot) {
+    // Check remote online players inside effective radius
+    let primaryRemote: { id: string; state: RemotePlayerState; rig: CharacterMeshRig } | null = null;
+    let primaryRemoteDist = maxRange;
+    let isRemoteHeadshot = false;
+
+    for (const [rId, remote] of this.remotePlayers) {
+      if (!remote.state.isAlive) continue;
+      const rPos = new THREE.Vector3(remote.state.x, remote.state.y + 1.0, remote.state.z);
+      const dToRay = forwardRaycaster.ray.distanceToPoint(rPos);
+      const dToCam = rayOrigin.distanceTo(rPos);
+
+      if (dToRay <= effectiveRadius && dToCam < blockDist && dToCam < primaryRemoteDist) {
+        primaryRemote = { id: rId, state: remote.state, rig: remote.rig };
+        primaryRemoteDist = dToCam;
+        isRemoteHeadshot = forwardRaycaster.ray.origin.y + forwardRaycaster.ray.direction.y * dToCam > remote.state.y + 1.45;
+      }
+    }
+
+    // Hit online remote player if closer than bot
+    if (primaryRemote && primaryRemoteDist < primaryBotDist) {
+      this.shotsHit++;
+      let totalDmg = wep.damage;
+      if (isRemoteHeadshot) totalDmg = Math.round(totalDmg * wep.headshotMultiplier);
+
+      const hadShield = primaryRemote.state.shield > 0;
+      if (primaryRemote.state.shield > 0) {
+        if (primaryRemote.state.shield >= totalDmg) {
+          primaryRemote.state.shield -= totalDmg;
+        } else {
+          const rem = totalDmg - primaryRemote.state.shield;
+          primaryRemote.state.shield = 0;
+          primaryRemote.state.health = Math.max(0, primaryRemote.state.health - rem);
+        }
+      } else {
+        primaryRemote.state.health = Math.max(0, primaryRemote.state.health - totalDmg);
+      }
+
+      this.damageDealt += totalDmg;
+      this.callbacks.onHitmarker(isRemoteHeadshot, hadShield);
+      fortniteAudio.playHitmarker(isRemoteHeadshot, hadShield);
+
+      this.addDamageNumber(
+        totalDmg.toString(),
+        isRemoteHeadshot ? '#fbbf24' : hadShield ? '#38bdf8' : '#ef4444',
+        isRemoteHeadshot,
+        hadShield,
+        primaryRemote.state.x,
+        primaryRemote.state.y + 2.2,
+        primaryRemote.state.z
+      );
+
+      // Send damage to remote player across network
+      multiplayerClient.sendPlayerAction({
+        type: 'damage_player',
+        targetId: primaryRemote.id,
+        damage: totalDmg,
+        isHeadshot: isRemoteHeadshot,
+        attackerName: this.profile.name,
+        weaponName: wep.name,
+      });
+
+      if (primaryRemote.state.health <= 0) {
+        primaryRemote.state.isAlive = false;
+        primaryRemote.rig.root.visible = false;
+        this.eliminations++;
+        this.callbacks.onElimination({
+          id: 'elim_' + Date.now(),
+          killer: this.profile.name,
+          victim: primaryRemote.state.name,
+          weaponName: wep.name,
+          isHeadshot: isRemoteHeadshot,
+          time: Date.now(),
+        });
+        this.callbacks.onEliminationBanner?.({
+          id: 'banner_' + Date.now(),
+          victim: primaryRemote.state.name,
+          weaponName: wep.name,
+          isHeadshot: isRemoteHeadshot,
+          eliminationCount: this.eliminations,
+          xpEarned: 250,
+          timestamp: Date.now(),
+        });
+        fortniteAudio.playEliminationSound();
+        this.spawnDroppedSupplies(primaryRemote.state.x, primaryRemote.state.y, primaryRemote.state.z);
+        multiplayerClient.sendPlayerAction({
+          type: 'player_eliminated',
+          victimId: primaryRemote.id,
+          victimName: primaryRemote.state.name,
+          attackerName: this.profile.name,
+          weaponName: wep.name,
+          isHeadshot: isRemoteHeadshot,
+        });
+        this.updatePlayersLeftCount();
+      }
+    } else if (primaryBot) {
       this.shotsHit++;
       let totalDmg = wep.damage;
       if (isHeadshot) totalDmg = Math.round(totalDmg * wep.headshotMultiplier);
@@ -2737,8 +2912,7 @@ export class FortniteEngine {
       return;
     }
 
-    const remaining = this.bots.filter((b) => b.isAlive).length + 1;
-    this.callbacks.onPlayersLeftChange(remaining);
+    this.updatePlayersLeftCount();
 
     // End game with Victory Royale when player's team is the only one left
     this.checkTeamVictoryCondition();
@@ -2748,7 +2922,8 @@ export class FortniteEngine {
     if (this.isGameOver) return;
     if (this.mode === '1v1_build_fight') return;
     const aliveEnemyBots = this.bots.filter((b) => b.isAlive && b.team !== this.playerTeam);
-    if (aliveEnemyBots.length === 0) {
+    const aliveRemotes = Array.from(this.remotePlayers.values()).filter((r) => r.state.isAlive);
+    if (aliveEnemyBots.length === 0 && aliveRemotes.length === 0) {
       this.triggerVictoryRoyale();
     }
   }

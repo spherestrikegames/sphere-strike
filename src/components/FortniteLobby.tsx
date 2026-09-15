@@ -19,6 +19,9 @@ import {
   Volume2,
   VolumeX,
   Settings,
+  Wifi,
+  WifiOff,
+  Zap,
 } from 'lucide-react';
 
 interface FortniteLobbyProps {
@@ -82,6 +85,12 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
         setParty({ ...updatedParty });
         setPartyError(null);
       },
+      onConnectionChange: (connected) => {
+        setParty((prev) => ({ ...prev, isConnected: connected }));
+        if (connected) {
+          setPartyError(null);
+        }
+      },
       onMatchStart: () => {
         setIsReady(true);
         fortniteAudio.playUiClick();
@@ -118,10 +127,10 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     }
   };
 
-  const handleJoinParty = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleJoinParty = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!joinCodeInput.trim()) return;
-    multiplayerClient.joinParty(joinCodeInput.trim().toUpperCase(), {
+    multiplayerClient.connectWithCode(joinCodeInput.trim().toUpperCase(), {
       name: profile.name,
       skinId: profile.selectedSkin,
       level: profile.level,
@@ -130,11 +139,31 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     fortniteAudio.playUiClick();
   };
 
+  const handleQuickMatch = () => {
+    multiplayerClient.quickMatch({
+      name: profile.name,
+      skinId: profile.selectedSkin,
+      level: profile.level,
+    });
+    fortniteAudio.playUiClick();
+  };
+
+  const handleRetryConnection = () => {
+    multiplayerClient.connect();
+    fortniteAudio.playUiClick();
+  };
+
   const handlePlayClick = () => {
+    if (selectedMode === 'battle_royale' && !party.isConnected) {
+      setPartyError('Battle Royale requires an active online connection! Connecting to server...');
+      multiplayerClient.connect();
+      return;
+    }
+
     setIsReady(true);
     fortniteAudio.playUiClick();
 
-    if (party.code) {
+    if (party.code && party.isConnected) {
       multiplayerClient.startPartyMatch();
     }
     setTimeout(() => {
@@ -149,7 +178,17 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     desc: string;
     icon: string;
     bg: string;
+    onlineOnly?: boolean;
   }[] = [
+    {
+      id: 'battle_royale',
+      name: 'BATTLE ROYALE',
+      tag: 'ONLINE MULTIPLAYER',
+      desc: 'Play with anyone online! Connect with room code or quick match to drop into the same game together.',
+      icon: '🌐',
+      bg: 'from-amber-600/70 to-red-950/90',
+      onlineOnly: true,
+    },
     {
       id: 'first_person_royale',
       name: 'AI KNOCKOUT',
@@ -524,19 +563,123 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
         {/* Right: Online Party / Squad Hub */}
         <div className="flex flex-col gap-3">
           {/* Party Hub Panel */}
-          <div className="p-4 rounded-3xl bg-slate-900/85 border border-white/15 backdrop-blur-md flex flex-col gap-3 shadow-2xl">
+          <div className={`p-4 rounded-3xl backdrop-blur-md flex flex-col gap-3 shadow-2xl transition-all ${
+            selectedMode === 'battle_royale'
+              ? 'bg-slate-900/90 border-2 border-amber-500/60 shadow-[0_0_30px_rgba(245,158,11,0.2)]'
+              : 'bg-slate-900/85 border border-white/15'
+          }`}>
+            {/* Header with Online Status */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-purple-400" />
-                <h3 className="font-display font-black text-sm text-white">ONLINE PARTY SQUAD</h3>
+                <Users className="w-4 h-4 text-amber-400" />
+                <h3 className="font-display font-black text-sm text-white">
+                  {selectedMode === 'battle_royale' ? 'BATTLE ROYALE ROOM' : 'ONLINE PARTY SQUAD'}
+                </h3>
               </div>
-              <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono text-[10px] font-bold border border-purple-500/30">
-                {party.members.length} / 4 PLAYERS
-              </span>
+              <div className="flex items-center gap-1.5">
+                {party.isConnected ? (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    ONLINE
+                  </span>
+                ) : (
+                  <button
+                    onClick={handleRetryConnection}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-mono text-[10px] font-bold border border-rose-500/40 cursor-pointer transition-all"
+                  >
+                    <WifiOff className="w-2.5 h-2.5" />
+                    RECONNECT
+                  </button>
+                )}
+                <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono text-[10px] font-bold border border-purple-500/30">
+                  {party.members.length} / 16
+                </span>
+              </div>
             </div>
 
-            {/* Party Members List */}
-            <div className="flex flex-col gap-1.5">
+            {/* Battle Royale Online Warning if Offline */}
+            {selectedMode === 'battle_royale' && !party.isConnected && (
+              <div className="p-2.5 rounded-xl bg-rose-950/70 border border-rose-500/50 text-rose-300 text-xs flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5 font-black text-rose-200">
+                  <WifiOff className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>ONLINE CONNECTION REQUIRED</span>
+                </div>
+                <p className="text-[11px] text-rose-300/90 leading-tight">
+                  Battle Royale is an online-only mode. Connect to match and play with other players.
+                </p>
+                <button
+                  onClick={handleRetryConnection}
+                  className="mt-1 py-1 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold self-start transition-all"
+                >
+                  Connect Now
+                </button>
+              </div>
+            )}
+
+            {/* Active Room Code Box */}
+            <div className="p-3 rounded-2xl bg-black/60 border border-white/10 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400 font-bold uppercase tracking-wider">YOUR ROOM CODE</span>
+                <span className="text-cyan-400 font-mono text-[10px]">SHARE WITH ANYONE</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 px-3 py-2 rounded-xl bg-slate-950/80 border border-amber-500/40 text-amber-300 font-mono font-black text-base tracking-widest text-center shadow-inner">
+                  {party.code || 'CONNECTING...'}
+                </div>
+                <button
+                  onClick={handleCopyCode}
+                  className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+                  title="Copy room code to clipboard"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied ? 'COPIED' : 'COPY'}</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                Share this code with anyone online. When they connect with your code, you will drop into the exact same game together!
+              </p>
+            </div>
+
+            {/* Join Room by Code Form */}
+            <form onSubmit={handleJoinParty} className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="ENTER ROOM CODE..."
+                value={joinCodeInput}
+                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                className="flex-1 px-3 py-2 rounded-xl bg-black/60 border border-white/20 text-xs font-mono font-bold text-yellow-300 placeholder:text-slate-500 uppercase focus:outline-none focus:border-amber-400"
+              />
+              <button
+                type="submit"
+                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-black transition-all shadow-md cursor-pointer"
+              >
+                CONNECT
+              </button>
+            </form>
+
+            {/* Quick Match Button */}
+            <button
+              type="button"
+              onClick={handleQuickMatch}
+              className="py-2 px-3 rounded-xl bg-gradient-to-r from-purple-700/80 to-indigo-700/80 hover:from-purple-600 hover:to-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-2 border border-purple-400/30 shadow-md transition-all cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-yellow-300" />
+              <span>QUICK MATCH (ANYONE ONLINE)</span>
+            </button>
+
+            {/* Multi-player Notice if multiple players connected */}
+            {party.members.length > 1 && (
+              <div className="p-2 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-pulse">
+                <span>🔥</span>
+                <span>{party.members.length} players connected! Ready to drop in together!</span>
+              </div>
+            )}
+
+            {/* Connected Members List */}
+            <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                PLAYERS IN THIS GAME ({party.members.length}):
+              </span>
               {party.members.map((member) => (
                 <div
                   key={member.id}
@@ -552,28 +695,11 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                         👑 HOST
                       </span>
                     )}
-                    <span className="text-[10px] font-mono text-cyan-300">READY</span>
+                    <span className="text-[10px] font-mono text-emerald-300">CONNECTED</span>
                   </div>
                 </div>
               ))}
             </div>
-
-            {/* Join Party Form */}
-            <form onSubmit={handleJoinParty} className="flex items-center gap-2 mt-1">
-              <input
-                type="text"
-                placeholder="ENTER PARTY CODE..."
-                value={joinCodeInput}
-                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                className="flex-1 px-3 py-2 rounded-xl bg-black/60 border border-white/20 text-xs font-mono font-bold text-yellow-300 placeholder:text-slate-500 uppercase focus:outline-none focus:border-cyan-400"
-              />
-              <button
-                type="submit"
-                className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md"
-              >
-                JOIN
-              </button>
-            </form>
 
             {partyError && (
               <span className="text-[10px] text-rose-400 font-bold bg-rose-950/40 p-1.5 rounded-lg border border-rose-800/40">
@@ -608,13 +734,23 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
 
         <button
           onClick={handlePlayClick}
-          disabled={isReady}
-          className="w-full sm:w-auto px-12 py-4 rounded-3xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-display font-black text-xl tracking-wider shadow-[0_0_35px_rgba(245,158,11,0.6)] transform -skew-x-6 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-75"
+          disabled={isReady || (selectedMode === 'battle_royale' && !party.isConnected)}
+          className={`w-full sm:w-auto px-12 py-4 rounded-3xl font-display font-black text-xl tracking-wider transform -skew-x-6 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 ${
+            selectedMode === 'battle_royale' && !party.isConnected
+              ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed shadow-none'
+              : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 shadow-[0_0_35px_rgba(245,158,11,0.6)]'
+          } disabled:opacity-75`}
         >
-          <Play className="w-6 h-6 fill-slate-950" />
+          <Play className="w-6 h-6 fill-current" />
           <span>
             {isReady
               ? 'LAUNCHING MATCH...'
+              : selectedMode === 'battle_royale' && !party.isConnected
+              ? 'ONLINE REQUIRED TO PLAY'
+              : selectedMode === 'battle_royale' && party.members.length > 1
+              ? `DROP TOGETHER (${party.members.length} PLAYERS)`
+              : selectedMode === 'battle_royale'
+              ? 'DROP INTO BATTLE ROYALE'
               : party.members.length > 1
               ? `READY UP SQUAD (${party.members.length})`
               : 'READY UP (PLAY)'}

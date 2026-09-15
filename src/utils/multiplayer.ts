@@ -5,8 +5,10 @@ export type MultiplayerEventHandler = {
   onMatchStart?: (seed: number, roomCode: string) => void;
   onPlayerSync?: (playerId: string, data: Partial<RemotePlayerState>) => void;
   onPlayerAction?: (playerId: string, action: any) => void;
+  onPlayerLeave?: (playerId: string) => void;
   onChatMessage?: (sender: string, text: string, time: number) => void;
   onError?: (msg: string) => void;
+  onConnectionChange?: (connected: boolean) => void;
 };
 
 export class MultiplayerClient {
@@ -47,6 +49,9 @@ export class MultiplayerClient {
         this.ws.onopen = () => {
           this.partyState.isConnected = true;
           this.partyState.error = null;
+          if (this.handlers.onConnectionChange) {
+            this.handlers.onConnectionChange(true);
+          }
           resolve(true);
         };
 
@@ -62,14 +67,24 @@ export class MultiplayerClient {
         this.ws.onerror = (err) => {
           console.warn('WS error or standalone offline mode', err);
           this.partyState.isConnected = false;
+          if (this.handlers.onConnectionChange) {
+            this.handlers.onConnectionChange(false);
+          }
           resolve(false);
         };
 
         this.ws.onclose = () => {
           this.partyState.isConnected = false;
+          if (this.handlers.onConnectionChange) {
+            this.handlers.onConnectionChange(false);
+          }
         };
       } catch (err) {
         console.warn('Failed to initialize WebSocket', err);
+        this.partyState.isConnected = false;
+        if (this.handlers.onConnectionChange) {
+          this.handlers.onConnectionChange(false);
+        }
         resolve(false);
       }
     });
@@ -136,6 +151,13 @@ export class MultiplayerClient {
         break;
       }
 
+      case 'player:leave': {
+        if (this.handlers.onPlayerLeave) {
+          this.handlers.onPlayerLeave(msg.playerId);
+        }
+        break;
+      }
+
       case 'party:chat': {
         if (this.handlers.onChatMessage) {
           this.handlers.onChatMessage(msg.sender, msg.text, msg.time);
@@ -143,6 +165,26 @@ export class MultiplayerClient {
         break;
       }
     }
+  }
+
+  public async connectWithCode(code: string, playerInfo: { name: string; skinId: string; level: number }) {
+    await this.connect();
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: 'party:connect',
+          code: code.trim().toUpperCase(),
+          player: {
+            id: this.myPlayerId,
+            ...playerInfo,
+          },
+        })
+      );
+    }
+  }
+
+  public async quickMatch(playerInfo: { name: string; skinId: string; level: number }) {
+    await this.connectWithCode('PUBLIC-ROYALE', playerInfo);
   }
 
   public async createParty(playerInfo: { name: string; skinId: string; level: number }, customCode?: string) {

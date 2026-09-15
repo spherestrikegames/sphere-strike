@@ -20,6 +20,7 @@ interface PartyRoom {
   createdAt: number;
   players: Map<string, PartyPlayer>;
   gameState: 'lobby' | 'playing';
+  seed?: number;
 }
 
 const rooms = new Map<string, PartyRoom>();
@@ -95,96 +96,71 @@ async function startServer() {
         const msg = JSON.parse(raw.toString());
 
         switch (msg.type) {
+          case 'party:connect':
+          case 'party:join':
           case 'party:create': {
-            const code =
-              msg.code ||
-              'FN-' + Math.floor(1000 + Math.random() * 9000).toString();
-            const upperCode = code.toUpperCase();
-            const playerId = msg.player.id || `p_${Date.now()}`;
+            let upperCode = (msg.code || '').toUpperCase().trim();
+            if (!upperCode) {
+              upperCode = 'ROYALE-' + Math.floor(1000 + Math.random() * 9000).toString();
+            }
+            const playerId = msg.player?.id || `p_${Date.now()}`;
 
-            const room: PartyRoom = {
-              code: upperCode,
-              hostId: playerId,
-              createdAt: Date.now(),
-              players: new Map(),
-              gameState: 'lobby',
-            };
+            let room = rooms.get(upperCode);
+            const isNewRoom = !room;
+
+            if (!room) {
+              room = {
+                code: upperCode,
+                hostId: playerId,
+                createdAt: Date.now(),
+                players: new Map(),
+                gameState: 'lobby',
+                seed: Math.floor(Math.random() * 1000000),
+              };
+              rooms.set(upperCode, room);
+            }
+
+            // If room had 0 players, make this player host
+            if (room.players.size === 0) {
+              room.hostId = playerId;
+            }
 
             const player: PartyPlayer = {
               id: playerId,
-              name: msg.player.name || 'Player',
-              skinId: msg.player.skinId || 'jonesy',
-              level: msg.player.level || 1,
+              name: msg.player?.name || 'Player',
+              skinId: msg.player?.skinId || 'jonesy',
+              level: msg.player?.level || 1,
               isReady: true,
               ws,
               lastPing: Date.now(),
             };
 
             room.players.set(playerId, player);
-            rooms.set(upperCode, room);
-
             currentRoomCode = upperCode;
             currentPlayerId = playerId;
 
+            // Send confirmation to joining player
             ws.send(
               JSON.stringify({
                 type: 'party:joined',
                 room: getPartyPayload(room),
                 playerId,
-              })
-            );
-            break;
-          }
-
-          case 'party:join': {
-            const upperCode = (msg.code || '').toUpperCase().trim();
-            const room = rooms.get(upperCode);
-
-            if (!room) {
-              ws.send(
-                JSON.stringify({
-                  type: 'party:error',
-                  message: `Party code "${upperCode}" was not found! Make sure host created it.`,
-                })
-              );
-              return;
-            }
-
-            const playerId = msg.player.id || `p_${Date.now()}`;
-            const player: PartyPlayer = {
-              id: playerId,
-              name: msg.player.name || 'Player',
-              skinId: msg.player.skinId || 'jonesy',
-              level: msg.player.level || 1,
-              isReady: false,
-              ws,
-              lastPing: Date.now(),
-            };
-
-            room.players.set(playerId, player);
-            currentRoomCode = upperCode;
-            currentPlayerId = playerId;
-
-            ws.send(
-              JSON.stringify({
-                type: 'party:joined',
-                room: getPartyPayload(room),
-                playerId,
+                seed: room.seed,
               })
             );
 
-            // If the room is already in-game, automatically transition the joining player into the match
+            // If match is already playing, immediately drop joining player into the match
             if (room.gameState === 'playing') {
               ws.send(
                 JSON.stringify({
                   type: 'match:start',
-                  seed: 424242,
+                  seed: room.seed,
                   roomCode: room.code,
                 })
               );
             }
 
-            // Notify others
+            // Notify everyone else in the room
             broadcastToRoom(room, getPartyPayload(room), ws);
             break;
           }
@@ -206,15 +182,26 @@ async function startServer() {
             const room = rooms.get(currentRoomCode);
             if (!room) return;
 
-            // Only host can start
-            if (room.hostId === currentPlayerId) {
-              room.gameState = 'playing';
-              broadcastToRoom(room, {
-                type: 'match:start',
-                seed: Math.floor(Math.random() * 100000),
-                roomCode: room.code,
-              });
+            room.gameState = 'playing';
+            if (!room.seed) {
+              room.seed = Math.floor(Math.random() * 1000000);
             }
+
+            broadcastToRoom(room, {
+              type: 'match:start',
+              seed: room.seed,
+              roomCode: room.code,
+            });
+            break;
+          }
+
+          case 'match:end':
+          case 'party:return_lobby': {
+            if (!currentRoomCode) return;
+            const room = rooms.get(currentRoomCode);
+            if (!room) return;
+            room.gameState = 'lobby';
+            broadcastToRoom(room, getPartyPayload(room));
             break;
           }
 
@@ -277,6 +264,11 @@ async function startServer() {
         const room = rooms.get(currentRoomCode);
         if (room) {
           room.players.delete(currentPlayerId);
+          // Broadcast player leave to others in game
+          broadcastToRoom(room, {
+            type: 'player:leave',
+            playerId: currentPlayerId,
+          });
           if (room.players.size === 0) {
             rooms.delete(currentRoomCode);
           } else {
