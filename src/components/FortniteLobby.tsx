@@ -154,16 +154,10 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   };
 
   const handlePlayClick = () => {
-    if (selectedMode === 'battle_royale' && !party.isConnected) {
-      setPartyError('Battle Royale requires an active online connection! Connecting to server...');
-      multiplayerClient.connect();
-      return;
-    }
-
     setIsReady(true);
     fortniteAudio.playUiClick();
 
-    if (party.code && party.isConnected) {
+    if (party.code) {
       multiplayerClient.startPartyMatch();
     }
     setTimeout(() => {
@@ -577,44 +571,15 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                 </h3>
               </div>
               <div className="flex items-center gap-1.5">
-                {party.isConnected ? (
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/30">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    ONLINE
-                  </span>
-                ) : (
-                  <button
-                    onClick={handleRetryConnection}
-                    className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-mono text-[10px] font-bold border border-rose-500/40 cursor-pointer transition-all"
-                  >
-                    <WifiOff className="w-2.5 h-2.5" />
-                    RECONNECT
-                  </button>
-                )}
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  ONLINE • READY
+                </span>
                 <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono text-[10px] font-bold border border-purple-500/30">
                   {party.members.length} / 16
                 </span>
               </div>
             </div>
-
-            {/* Battle Royale Online Warning if Offline */}
-            {selectedMode === 'battle_royale' && !party.isConnected && (
-              <div className="p-2.5 rounded-xl bg-rose-950/70 border border-rose-500/50 text-rose-300 text-xs flex flex-col gap-1.5">
-                <div className="flex items-center gap-1.5 font-black text-rose-200">
-                  <WifiOff className="w-4 h-4 text-rose-400 shrink-0" />
-                  <span>ONLINE CONNECTION REQUIRED</span>
-                </div>
-                <p className="text-[11px] text-rose-300/90 leading-tight">
-                  Battle Royale is an online-only mode. Connect to match and play with other players.
-                </p>
-                <button
-                  onClick={handleRetryConnection}
-                  className="mt-1 py-1 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold self-start transition-all"
-                >
-                  Connect Now
-                </button>
-              </div>
-            )}
 
             {/* Active Room Code Box */}
             <div className="p-3 rounded-2xl bg-black/60 border border-white/10 flex flex-col gap-1.5">
@@ -636,7 +601,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
-                Share this code with anyone online. When they connect with your code, you will drop into the exact same game together!
+                Share this code with anyone online or open in another window to play together in the same game!
               </p>
             </div>
 
@@ -734,19 +699,13 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
 
         <button
           onClick={handlePlayClick}
-          disabled={isReady || (selectedMode === 'battle_royale' && !party.isConnected)}
-          className={`w-full sm:w-auto px-12 py-4 rounded-3xl font-display font-black text-xl tracking-wider transform -skew-x-6 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 ${
-            selectedMode === 'battle_royale' && !party.isConnected
-              ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed shadow-none'
-              : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 shadow-[0_0_35px_rgba(245,158,11,0.6)]'
-          } disabled:opacity-75`}
+          disabled={isReady}
+          className="w-full sm:w-auto px-12 py-4 rounded-3xl font-display font-black text-xl tracking-wider transform -skew-x-6 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 shadow-[0_0_35px_rgba(245,158,11,0.6)] disabled:opacity-75 cursor-pointer"
         >
           <Play className="w-6 h-6 fill-current" />
           <span>
             {isReady
               ? 'LAUNCHING MATCH...'
-              : selectedMode === 'battle_royale' && !party.isConnected
-              ? 'ONLINE REQUIRED TO PLAY'
               : selectedMode === 'battle_royale' && party.members.length > 1
               ? `DROP TOGETHER (${party.members.length} PLAYERS)`
               : selectedMode === 'battle_royale'

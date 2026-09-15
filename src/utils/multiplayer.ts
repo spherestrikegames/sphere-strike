@@ -16,231 +16,470 @@ export class MultiplayerClient {
   private handlers: MultiplayerEventHandler = {};
   public partyState: PartyState = {
     code: '',
-    isHost: false,
+    isHost: true,
     members: [],
-    isConnected: false,
+    isConnected: true, // Optimistically online
     error: null,
   };
   public myPlayerId: string = `p_${Math.floor(1000 + Math.random() * 9000)}`;
 
+  private transport: 'ws' | 'http' | 'mesh' = 'http';
+  private pollTimer: any = null;
+  private lastEventId: number = 0;
+  private channel: BroadcastChannel | null = null;
+  private isGameRunning: boolean = false;
+  private pendingSyncData: Partial<RemotePlayerState> | null = null;
+  private syncTimer: any = null;
+  private activePlayerInfo = {
+    name: 'Player',
+    skinId: 'jonesy',
+    level: 1,
+  };
+
   constructor(handlers: MultiplayerEventHandler = {}) {
     this.handlers = handlers;
     this.myPlayerId = `p_${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // Initialize cross-tab / local mesh broadcast
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        this.channel = new BroadcastChannel('fortnite_royale_network');
+        this.channel.onmessage = (event) => {
+          if (!event.data) return;
+          const { type, senderId, ...rest } = event.data;
+          if (senderId === this.myPlayerId) return; // ignore own broadcast
+          this.handleIncomingEvent(type, rest, senderId);
+        };
+      } catch (e) {
+        console.warn('BroadcastChannel not supported', e);
+      }
+    }
+
+    // Auto-connect immediately
+    this.connect();
+    this.startPollingLoop();
   }
 
   public setHandlers(handlers: MultiplayerEventHandler) {
     this.handlers = { ...this.handlers, ...handlers };
   }
 
-  public connect(): Promise<boolean> {
-    return new Promise((resolve) => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        resolve(true);
-        return;
-      }
+  public setGameRunning(running: boolean) {
+    this.isGameRunning = running;
+    this.startPollingLoop();
+  }
 
+  /**
+   * Connects to online matchmaking via HTTP & WebSocket
+   */
+  public async connect(): Promise<boolean> {
+    this.partyState.isConnected = true;
+    this.partyState.error = null;
+
+    if (this.handlers.onConnectionChange) {
+      this.handlers.onConnectionChange(true);
+    }
+
+    // Probe backend HTTP API
+    try {
+      const res = await fetch('/api/health', { method: 'GET', cache: 'no-store' });
+      if (res.ok) {
+        this.partyState.isConnected = true;
+        this.handlers.onConnectionChange?.(true);
+      }
+    } catch {
+      // Backend probe failed (e.g. static site), fallback to mesh/local
+      this.transport = 'mesh';
+    }
+
+    // Try WebSocket connection in background
+    if (typeof window !== 'undefined') {
+      this.tryWebSocket();
+    }
+
+    return true;
+  }
+
+  private tryWebSocket() {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.host;
       const wsUrl = `${protocol}//${host}/ws`;
 
-      try {
-        this.ws = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl);
 
-        this.ws.onopen = () => {
-          this.partyState.isConnected = true;
-          this.partyState.error = null;
-          if (this.handlers.onConnectionChange) {
-            this.handlers.onConnectionChange(true);
-          }
-          resolve(true);
-        };
+      socket.onopen = () => {
+        this.ws = socket;
+        this.transport = 'ws';
+        this.partyState.isConnected = true;
+        this.partyState.error = null;
+        this.handlers.onConnectionChange?.(true);
 
-        this.ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            this.handleMessage(msg);
-          } catch (e) {
-            console.error('Multiplayer msg parse error', e);
-          }
-        };
-
-        this.ws.onerror = (err) => {
-          console.warn('WS error or standalone offline mode', err);
-          this.partyState.isConnected = false;
-          if (this.handlers.onConnectionChange) {
-            this.handlers.onConnectionChange(false);
-          }
-          resolve(false);
-        };
-
-        this.ws.onclose = () => {
-          this.partyState.isConnected = false;
-          if (this.handlers.onConnectionChange) {
-            this.handlers.onConnectionChange(false);
-          }
-        };
-      } catch (err) {
-        console.warn('Failed to initialize WebSocket', err);
-        this.partyState.isConnected = false;
-        if (this.handlers.onConnectionChange) {
-          this.handlers.onConnectionChange(false);
+        // If we have an active room, join it over WS
+        if (this.partyState.code) {
+          socket.send(
+            JSON.stringify({
+              type: 'party:connect',
+              code: this.partyState.code,
+              player: {
+                id: this.myPlayerId,
+                ...this.activePlayerInfo,
+              },
+            })
+          );
         }
-        resolve(false);
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          this.handleMessage(msg);
+        } catch (e) {
+          console.error('Multiplayer WS parse error', e);
+        }
+      };
+
+      socket.onerror = () => {
+        // Fallback to HTTP polling seamlessly
+        this.transport = 'http';
+        this.ws = null;
+      };
+
+      socket.onclose = () => {
+        // Fallback to HTTP polling seamlessly
+        this.transport = 'http';
+        this.ws = null;
+      };
+    } catch (err) {
+      this.transport = 'http';
+      this.ws = null;
+    }
+  }
+
+  private startPollingLoop() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+    }
+
+    const interval = this.isGameRunning ? 100 : 700;
+
+    this.pollTimer = setInterval(() => {
+      this.pollHttpUpdates();
+    }, interval);
+  }
+
+  private async pollHttpUpdates() {
+    if (!this.partyState.code) return;
+
+    try {
+      const payload: any = {
+        code: this.partyState.code,
+        playerId: this.myPlayerId,
+        sinceEventId: this.lastEventId,
+      };
+
+      if (this.pendingSyncData) {
+        payload.transform = this.pendingSyncData;
+        this.pendingSyncData = null;
       }
-    });
+
+      const res = await fetch('/api/parties/poll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (data.room) {
+        this.updatePartyFromPayload(data.room);
+      }
+
+      if (data.lastEventId) {
+        this.lastEventId = Math.max(this.lastEventId, data.lastEventId);
+      }
+
+      if (Array.isArray(data.events)) {
+        for (const evt of data.events) {
+          this.handleIncomingEvent(evt.type, evt.payload, evt.senderId);
+        }
+      }
+    } catch {
+      // Offline / transient network glitch
+    }
+  }
+
+  private updatePartyFromPayload(roomPayload: any) {
+    const members: PartyMember[] = (roomPayload.players || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      skinId: p.skinId,
+      level: p.level,
+      isReady: p.isReady,
+      isHost: p.id === roomPayload.hostId,
+    }));
+
+    // Ensure local player is included in members if not yet present
+    if (!members.some((m) => m.id === this.myPlayerId)) {
+      members.unshift({
+        id: this.myPlayerId,
+        name: this.activePlayerInfo.name,
+        skinId: this.activePlayerInfo.skinId,
+        level: this.activePlayerInfo.level,
+        isReady: true,
+        isHost: true,
+      });
+    }
+
+    this.partyState = {
+      code: roomPayload.code || this.partyState.code,
+      isHost: roomPayload.hostId === this.myPlayerId || members.length <= 1,
+      members,
+      isConnected: true,
+      error: null,
+    };
+
+    if (this.handlers.onPartyUpdate) {
+      this.handlers.onPartyUpdate(this.partyState);
+    }
+  }
+
+  private handleIncomingEvent(type: string, payload: any, senderId?: string) {
+    if (senderId === this.myPlayerId) return;
+
+    switch (type) {
+      case 'match:start': {
+        this.handlers.onMatchStart?.(payload.seed || 123456, payload.roomCode || this.partyState.code);
+        break;
+      }
+
+      case 'player:sync': {
+        if (senderId) {
+          this.handlers.onPlayerSync?.(senderId, payload.data || payload);
+        }
+        break;
+      }
+
+      case 'player:action': {
+        if (senderId) {
+          this.handlers.onPlayerAction?.(senderId, payload.action || payload);
+        }
+        break;
+      }
+
+      case 'player:leave': {
+        const leftId = payload.playerId || senderId;
+        if (leftId) {
+          this.handlers.onPlayerLeave?.(leftId);
+        }
+        break;
+      }
+
+      case 'party:update': {
+        if (payload) {
+          this.updatePartyFromPayload(payload);
+        }
+        break;
+      }
+
+      case 'party:chat': {
+        this.handlers.onChatMessage?.(payload.sender || 'Player', payload.text || '', payload.time || Date.now());
+        break;
+      }
+    }
   }
 
   private handleMessage(msg: any) {
     switch (msg.type) {
       case 'party:joined': {
         this.myPlayerId = msg.playerId || this.myPlayerId;
-        const room = msg.room;
-        this.partyState = {
-          code: room.code,
-          isHost: room.hostId === this.myPlayerId,
-          members: room.players,
-          isConnected: true,
-          error: null,
-        };
-        if (this.handlers.onPartyUpdate) {
-          this.handlers.onPartyUpdate(this.partyState);
+        if (msg.room) {
+          this.updatePartyFromPayload(msg.room);
         }
         break;
       }
 
       case 'party:update': {
-        this.partyState = {
-          code: msg.code,
-          isHost: msg.hostId === this.myPlayerId,
-          members: msg.players,
-          isConnected: true,
-          error: null,
-        };
-        if (this.handlers.onPartyUpdate) {
-          this.handlers.onPartyUpdate(this.partyState);
-        }
+        this.updatePartyFromPayload(msg);
         break;
       }
 
       case 'party:error': {
         this.partyState.error = msg.message;
-        if (this.handlers.onError) {
-          this.handlers.onError(msg.message);
-        }
+        this.handlers.onError?.(msg.message);
         break;
       }
 
       case 'match:start': {
-        if (this.handlers.onMatchStart) {
-          this.handlers.onMatchStart(msg.seed, msg.roomCode);
-        }
+        this.handlers.onMatchStart?.(msg.seed, msg.roomCode || this.partyState.code);
         break;
       }
 
       case 'player:sync': {
-        if (this.handlers.onPlayerSync) {
-          this.handlers.onPlayerSync(msg.playerId, msg.data);
+        if (msg.playerId && msg.playerId !== this.myPlayerId) {
+          this.handlers.onPlayerSync?.(msg.playerId, msg.data);
         }
         break;
       }
 
       case 'player:action': {
-        if (this.handlers.onPlayerAction) {
-          this.handlers.onPlayerAction(msg.playerId, msg.action);
+        if (msg.playerId && msg.playerId !== this.myPlayerId) {
+          this.handlers.onPlayerAction?.(msg.playerId, msg.action);
         }
         break;
       }
 
       case 'player:leave': {
-        if (this.handlers.onPlayerLeave) {
-          this.handlers.onPlayerLeave(msg.playerId);
+        if (msg.playerId && msg.playerId !== this.myPlayerId) {
+          this.handlers.onPlayerLeave?.(msg.playerId);
         }
         break;
       }
 
       case 'party:chat': {
-        if (this.handlers.onChatMessage) {
-          this.handlers.onChatMessage(msg.sender, msg.text, msg.time);
-        }
+        this.handlers.onChatMessage?.(msg.sender, msg.text, msg.time);
         break;
       }
     }
   }
 
   public async connectWithCode(code: string, playerInfo: { name: string; skinId: string; level: number }) {
-    await this.connect();
+    const cleanCode = (code || '').trim().toUpperCase() || 'FN-ROYALE';
+    this.activePlayerInfo = { ...playerInfo };
+
+    // Update local state immediately
+    this.partyState.code = cleanCode;
+    this.partyState.isConnected = true;
+    this.partyState.error = null;
+
+    if (!this.partyState.members.some((m) => m.id === this.myPlayerId)) {
+      this.partyState.members = [
+        {
+          id: this.myPlayerId,
+          name: playerInfo.name,
+          skinId: playerInfo.skinId,
+          level: playerInfo.level,
+          isReady: true,
+          isHost: true,
+        },
+      ];
+    }
+    this.handlers.onPartyUpdate?.(this.partyState);
+
+    // Broadcast on local channel
+    this.channel?.postMessage({
+      type: 'party:join',
+      senderId: this.myPlayerId,
+      code: cleanCode,
+      player: { id: this.myPlayerId, ...playerInfo },
+    });
+
+    // Send to WS if open
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
           type: 'party:connect',
-          code: code.trim().toUpperCase(),
-          player: {
-            id: this.myPlayerId,
-            ...playerInfo,
-          },
+          code: cleanCode,
+          player: { id: this.myPlayerId, ...playerInfo },
         })
       );
     }
+
+    // Always send HTTP Join
+    try {
+      const res = await fetch('/api/parties/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: cleanCode,
+          player: { id: this.myPlayerId, ...playerInfo },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.room) {
+          this.updatePartyFromPayload(data.room);
+        }
+        if (data.lastEventId) {
+          this.lastEventId = data.lastEventId;
+        }
+      }
+    } catch {
+      // Local fallback
+    }
+
+    this.startPollingLoop();
   }
 
   public async quickMatch(playerInfo: { name: string; skinId: string; level: number }) {
-    await this.connectWithCode('PUBLIC-ROYALE', playerInfo);
+    let targetCode = 'PUBLIC-ROYALE';
+
+    try {
+      const res = await fetch('/api/parties/public');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.rooms) && data.rooms.length > 0) {
+          targetCode = data.rooms[0].code;
+        }
+      }
+    } catch {
+      // use default
+    }
+
+    await this.connectWithCode(targetCode, playerInfo);
   }
 
   public async createParty(playerInfo: { name: string; skinId: string; level: number }, customCode?: string) {
-    await this.connect();
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(
-        JSON.stringify({
-          type: 'party:create',
-          code: customCode,
-          player: {
-            id: this.myPlayerId,
-            ...playerInfo,
-          },
-        })
-      );
-    }
+    const code = customCode || 'FN-' + Math.floor(1000 + Math.random() * 9000);
+    await this.connectWithCode(code, playerInfo);
   }
 
   public async joinParty(code: string, playerInfo: { name: string; skinId: string; level: number }) {
-    await this.connect();
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(
-        JSON.stringify({
-          type: 'party:join',
-          code: code.trim().toUpperCase(),
-          player: {
-            id: this.myPlayerId,
-            ...playerInfo,
-          },
-        })
-      );
-    }
+    await this.connectWithCode(code, playerInfo);
   }
 
   public setReady(isReady: boolean) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(
-        JSON.stringify({
-          type: 'party:ready',
-          isReady,
-        })
-      );
+      this.ws.send(JSON.stringify({ type: 'party:ready', isReady }));
     }
   }
 
   public startPartyMatch() {
+    const seed = Math.floor(Math.random() * 1000000);
+
+    // Notify local channel
+    this.channel?.postMessage({
+      type: 'match:start',
+      senderId: this.myPlayerId,
+      seed,
+      roomCode: this.partyState.code,
+    });
+
+    // Notify WS
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(
-        JSON.stringify({
-          type: 'match:start',
-        })
-      );
+      this.ws.send(JSON.stringify({ type: 'match:start' }));
     }
+
+    // Notify HTTP backend
+    if (this.partyState.code) {
+      fetch('/api/parties/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: this.partyState.code, playerId: this.myPlayerId }),
+      }).catch(() => {});
+    }
+
+    this.handlers.onMatchStart?.(seed, this.partyState.code);
   }
 
   public sendPlayerSync(data: Partial<RemotePlayerState>) {
+    // Send over WebSocket if available
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
@@ -248,10 +487,21 @@ export class MultiplayerClient {
           data,
         })
       );
+    } else {
+      // Buffer for next HTTP poll
+      this.pendingSyncData = { ...this.pendingSyncData, ...data };
     }
+
+    // Broadcast across local browser windows
+    this.channel?.postMessage({
+      type: 'player:sync',
+      senderId: this.myPlayerId,
+      data,
+    });
   }
 
   public sendPlayerAction(action: any) {
+    // Send over WebSocket
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
@@ -260,18 +510,38 @@ export class MultiplayerClient {
         })
       );
     }
+
+    // Send over HTTP API
+    if (this.partyState.code) {
+      fetch('/api/parties/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: this.partyState.code,
+          playerId: this.myPlayerId,
+          action,
+        }),
+      }).catch(() => {});
+    }
+
+    // Broadcast to local browser windows
+    this.channel?.postMessage({
+      type: 'player:action',
+      senderId: this.myPlayerId,
+      action,
+    });
   }
 
   public sendPartyChat(text: string, sender: string) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(
-        JSON.stringify({
-          type: 'party:chat',
-          text,
-          sender,
-        })
-      );
+      this.ws.send(JSON.stringify({ type: 'party:chat', text, sender }));
     }
+    this.channel?.postMessage({
+      type: 'party:chat',
+      senderId: this.myPlayerId,
+      text,
+      sender,
+    });
   }
 }
 

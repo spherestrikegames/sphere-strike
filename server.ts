@@ -4,14 +4,23 @@ import path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 
+interface RoomEvent {
+  id: number;
+  type: string;
+  senderId?: string;
+  payload: any;
+  timestamp: number;
+}
+
 interface PartyPlayer {
   id: string;
   name: string;
   skinId: string;
   level: number;
   isReady: boolean;
-  ws: WebSocket;
+  ws?: WebSocket;
   lastPing: number;
+  transform?: any;
 }
 
 interface PartyRoom {
@@ -20,10 +29,82 @@ interface PartyRoom {
   createdAt: number;
   players: Map<string, PartyPlayer>;
   gameState: 'lobby' | 'playing';
-  seed?: number;
+  seed: number;
+  events: RoomEvent[];
+  eventSeq: number;
 }
 
 const rooms = new Map<string, PartyRoom>();
+
+function getPartyPayload(room: PartyRoom) {
+  return {
+    type: 'party:update',
+    code: room.code,
+    hostId: room.hostId,
+    gameState: room.gameState,
+    seed: room.seed,
+    players: Array.from(room.players.values()).map((p) => ({
+      id: p.id,
+      name: p.name,
+      skinId: p.skinId,
+      level: p.level,
+      isReady: p.isReady,
+      isHost: p.id === room.hostId,
+      transform: p.transform,
+    })),
+  };
+}
+
+function broadcastToRoom(room: PartyRoom, message: object, excludeWs?: WebSocket) {
+  const data = JSON.stringify(message);
+  room.players.forEach((player) => {
+    if (player.ws && player.ws !== excludeWs && player.ws.readyState === WebSocket.OPEN) {
+      player.ws.send(data);
+    }
+  });
+}
+
+function publishRoomEvent(room: PartyRoom, type: string, payload: any, senderId?: string, excludeWs?: WebSocket): RoomEvent {
+  const eventId = ++room.eventSeq;
+  const evt: RoomEvent = {
+    id: eventId,
+    type,
+    senderId,
+    payload,
+    timestamp: Date.now(),
+  };
+
+  room.events.push(evt);
+  if (room.events.length > 120) {
+    room.events.shift();
+  }
+
+  broadcastToRoom(room, { type, eventId, senderId, ...payload }, excludeWs);
+  return evt;
+}
+
+function cleanupStalePlayers() {
+  const now = Date.now();
+  for (const [code, room] of rooms.entries()) {
+    for (const [playerId, player] of room.players.entries()) {
+      const isWsOpen = player.ws && player.ws.readyState === WebSocket.OPEN;
+      if (!isWsOpen && now - player.lastPing > 25000) {
+        room.players.delete(playerId);
+        publishRoomEvent(room, 'player:leave', { playerId });
+        if (room.hostId === playerId && room.players.size > 0) {
+          const nextHost = room.players.keys().next().value;
+          if (nextHost) room.hostId = nextHost;
+        }
+        publishRoomEvent(room, 'party:update', getPartyPayload(room));
+      }
+    }
+    if (room.players.size === 0 && now - room.createdAt > 300000) {
+      rooms.delete(code);
+    }
+  }
+}
+
+setInterval(cleanupStalePlayers, 10000);
 
 async function startServer() {
   const app = express();
@@ -34,7 +115,18 @@ async function startServer() {
 
   // API Routes
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', partiesCount: rooms.size });
+    res.json({ status: 'ok', partiesCount: rooms.size, timestamp: Date.now() });
+  });
+
+  app.get('/api/parties/public', (req, res) => {
+    const list = Array.from(rooms.values())
+      .filter((r) => r.players.size < 16)
+      .map((r) => ({
+        code: r.code,
+        playerCount: r.players.size,
+        gameState: r.gameState,
+      }));
+    res.json({ rooms: list });
   });
 
   app.get('/api/parties/:code', (req, res) => {
@@ -42,50 +134,130 @@ async function startServer() {
     if (!room) {
       return res.status(404).json({ error: 'Party code not found' });
     }
-    const playerList = Array.from(room.players.values()).map((p) => ({
-      id: p.id,
-      name: p.name,
-      skinId: p.skinId,
-      level: p.level,
-      isReady: p.isReady,
-      isHost: p.id === room.hostId,
-    }));
+    res.json(getPartyPayload(room));
+  });
+
+  // HTTP Join or Create Party
+  app.post('/api/parties/join', (req, res) => {
+    let { code, player } = req.body || {};
+    let upperCode = (code || '').toUpperCase().trim();
+    if (!upperCode) {
+      upperCode = 'ROYALE-' + Math.floor(1000 + Math.random() * 9000).toString();
+    }
+    const playerId = player?.id || `p_${Date.now()}`;
+
+    let room = rooms.get(upperCode);
+    if (!room) {
+      room = {
+        code: upperCode,
+        hostId: playerId,
+        createdAt: Date.now(),
+        players: new Map(),
+        gameState: 'lobby',
+        seed: Math.floor(Math.random() * 1000000),
+        events: [],
+        eventSeq: 0,
+      };
+      rooms.set(upperCode, room);
+    }
+
+    if (room.players.size === 0) {
+      room.hostId = playerId;
+    }
+
+    const partyPlayer: PartyPlayer = {
+      id: playerId,
+      name: player?.name || 'Player',
+      skinId: player?.skinId || 'jonesy',
+      level: player?.level || 1,
+      isReady: true,
+      lastPing: Date.now(),
+    };
+
+    room.players.set(playerId, partyPlayer);
+    publishRoomEvent(room, 'party:update', getPartyPayload(room));
+
     res.json({
+      success: true,
       code: room.code,
-      hostId: room.hostId,
-      gameState: room.gameState,
-      players: playerList,
+      seed: room.seed,
+      playerId,
+      room: getPartyPayload(room),
+      lastEventId: room.eventSeq,
     });
+  });
+
+  // HTTP Sync & Poll endpoint (for updates, movement, and events)
+  app.post('/api/parties/poll', (req, res) => {
+    const { code, playerId, sinceEventId = 0, transform } = req.body || {};
+    if (!code) return res.status(400).json({ error: 'Missing code' });
+    const room = rooms.get(code.toUpperCase());
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+
+    if (playerId && room.players.has(playerId)) {
+      const p = room.players.get(playerId)!;
+      p.lastPing = Date.now();
+      if (transform) {
+        p.transform = transform;
+        // broadcast transform to ws players
+        broadcastToRoom(room, { type: 'player:sync', playerId, data: transform });
+      }
+    }
+
+    const newEvents = room.events.filter((e) => e.id > sinceEventId && e.senderId !== playerId);
+    res.json({
+      room: getPartyPayload(room),
+      events: newEvents,
+      lastEventId: room.eventSeq,
+      gameState: room.gameState,
+      seed: room.seed,
+    });
+  });
+
+  // HTTP Action endpoint (shoot, damage, elim, chat)
+  app.post('/api/parties/action', (req, res) => {
+    const { code, playerId, action } = req.body || {};
+    if (!code || !action) return res.status(400).json({ error: 'Missing code or action' });
+    const room = rooms.get(code.toUpperCase());
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+
+    const evt = publishRoomEvent(room, 'player:action', { action }, playerId);
+    res.json({ success: true, eventId: evt.id });
+  });
+
+  // HTTP Start Match endpoint
+  app.post('/api/parties/start', (req, res) => {
+    const { code } = req.body || {};
+    if (!code) return res.status(400).json({ error: 'Missing code' });
+    const room = rooms.get(code.toUpperCase());
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+
+    room.gameState = 'playing';
+    if (!room.seed) room.seed = Math.floor(Math.random() * 1000000);
+
+    publishRoomEvent(room, 'match:start', { seed: room.seed, roomCode: room.code });
+    res.json({ success: true, seed: room.seed, roomCode: room.code });
+  });
+
+  // HTTP Leave Party
+  app.post('/api/parties/leave', (req, res) => {
+    const { code, playerId } = req.body || {};
+    if (!code || !playerId) return res.json({ success: true });
+    const room = rooms.get(code.toUpperCase());
+    if (room) {
+      room.players.delete(playerId);
+      publishRoomEvent(room, 'player:leave', { playerId });
+      if (room.hostId === playerId && room.players.size > 0) {
+        const nextHost = room.players.keys().next().value;
+        if (nextHost) room.hostId = nextHost;
+      }
+      publishRoomEvent(room, 'party:update', getPartyPayload(room));
+    }
+    res.json({ success: true });
   });
 
   // WebSocket Server setup
   const wss = new WebSocketServer({ server, path: '/ws' });
-
-  function broadcastToRoom(room: PartyRoom, message: object, excludeWs?: WebSocket) {
-    const data = JSON.stringify(message);
-    room.players.forEach((player) => {
-      if (player.ws !== excludeWs && player.ws.readyState === WebSocket.OPEN) {
-        player.ws.send(data);
-      }
-    });
-  }
-
-  function getPartyPayload(room: PartyRoom) {
-    return {
-      type: 'party:update',
-      code: room.code,
-      hostId: room.hostId,
-      gameState: room.gameState,
-      players: Array.from(room.players.values()).map((p) => ({
-        id: p.id,
-        name: p.name,
-        skinId: p.skinId,
-        level: p.level,
-        isReady: p.isReady,
-        isHost: p.id === room.hostId,
-      })),
-    };
-  }
 
   wss.on('connection', (ws: WebSocket) => {
     let currentRoomCode: string | null = null;
@@ -106,8 +278,6 @@ async function startServer() {
             const playerId = msg.player?.id || `p_${Date.now()}`;
 
             let room = rooms.get(upperCode);
-            const isNewRoom = !room;
-
             if (!room) {
               room = {
                 code: upperCode,
@@ -116,6 +286,8 @@ async function startServer() {
                 players: new Map(),
                 gameState: 'lobby',
                 seed: Math.floor(Math.random() * 1000000),
+                events: [],
+                eventSeq: 0,
               };
               rooms.set(upperCode, room);
             }
@@ -161,7 +333,7 @@ async function startServer() {
             }
 
             // Notify everyone else in the room
-            broadcastToRoom(room, getPartyPayload(room), ws);
+            publishRoomEvent(room, 'party:update', getPartyPayload(room), playerId, ws);
             break;
           }
 
@@ -173,7 +345,7 @@ async function startServer() {
             if (!player) return;
 
             player.isReady = !!msg.isReady;
-            broadcastToRoom(room, getPartyPayload(room));
+            publishRoomEvent(room, 'party:update', getPartyPayload(room));
             break;
           }
 
@@ -187,8 +359,7 @@ async function startServer() {
               room.seed = Math.floor(Math.random() * 1000000);
             }
 
-            broadcastToRoom(room, {
-              type: 'match:start',
+            publishRoomEvent(room, 'match:start', {
               seed: room.seed,
               roomCode: room.code,
             });
@@ -201,7 +372,7 @@ async function startServer() {
             const room = rooms.get(currentRoomCode);
             if (!room) return;
             room.gameState = 'lobby';
-            broadcastToRoom(room, getPartyPayload(room));
+            publishRoomEvent(room, 'party:update', getPartyPayload(room));
             break;
           }
 
@@ -210,6 +381,12 @@ async function startServer() {
             if (!currentRoomCode || !currentPlayerId) return;
             const room = rooms.get(currentRoomCode);
             if (!room) return;
+
+            const player = room.players.get(currentPlayerId);
+            if (player) {
+              player.lastPing = Date.now();
+              player.transform = msg.data;
+            }
 
             broadcastToRoom(
               room,
@@ -228,13 +405,11 @@ async function startServer() {
             const room = rooms.get(currentRoomCode);
             if (!room) return;
 
-            broadcastToRoom(
+            publishRoomEvent(
               room,
-              {
-                type: 'player:action',
-                playerId: currentPlayerId,
-                action: msg.action,
-              },
+              'player:action',
+              { action: msg.action },
+              currentPlayerId,
               ws
             );
             break;
@@ -245,8 +420,7 @@ async function startServer() {
             const room = rooms.get(currentRoomCode);
             if (!room) return;
 
-            broadcastToRoom(room, {
-              type: 'party:chat',
+            publishRoomEvent(room, 'party:chat', {
               sender: msg.sender || 'Player',
               text: msg.text,
               time: Date.now(),
@@ -264,20 +438,15 @@ async function startServer() {
         const room = rooms.get(currentRoomCode);
         if (room) {
           room.players.delete(currentPlayerId);
-          // Broadcast player leave to others in game
-          broadcastToRoom(room, {
-            type: 'player:leave',
-            playerId: currentPlayerId,
-          });
+          publishRoomEvent(room, 'player:leave', { playerId: currentPlayerId });
           if (room.players.size === 0) {
             rooms.delete(currentRoomCode);
           } else {
-            // If host left, assign next player
             if (room.hostId === currentPlayerId) {
               const nextHost = room.players.keys().next().value;
               if (nextHost) room.hostId = nextHost;
             }
-            broadcastToRoom(room, getPartyPayload(room));
+            publishRoomEvent(room, 'party:update', getPartyPayload(room));
           }
         }
       }

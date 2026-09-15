@@ -879,6 +879,7 @@ export class FortniteEngine {
   }
 
   private setupMultiplayer() {
+    multiplayerClient.setGameRunning(true);
     multiplayerClient.setHandlers({
       onPlayerSync: (playerId, data) => {
         let remote = this.remotePlayers.get(playerId);
@@ -1060,6 +1061,7 @@ export class FortniteEngine {
       this.scene.remove(remote.rig.root);
     }
     this.remotePlayers.clear();
+    multiplayerClient.setGameRunning(false);
     this.renderer.dispose();
   }
 
