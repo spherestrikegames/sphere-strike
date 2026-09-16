@@ -22,6 +22,7 @@ import {
   PickupNotification,
   EliminationBannerData,
   Arena1v1State,
+  BattleRoyaleDuelState,
   GameMode,
   BattlegroundMap,
   WeaponRarity,
@@ -45,6 +46,7 @@ import {
   getGroundSurface,
   isPointInLake,
   UpgradeBenchStation,
+  SKYSCRAPER_LAUNCH_PADS,
 } from './fortniteWorld';
 import { createFirstPersonWeaponRig, createMuzzleFlash } from './fortniteWeapons';
 import {
@@ -83,6 +85,7 @@ export interface EngineCallbacks {
   onNearUpgradeBenchPrompt?: (prompt: string | null) => void;
   onOpenShop?: () => void;
   onArena1v1Update?: (state: Arena1v1State) => void;
+  onDuelUpdate?: (state: BattleRoyaleDuelState) => void;
   onGoldChange?: (gold: number) => void;
   onEliminationBanner?: (data: EliminationBannerData) => void;
   onItemCollected?: (item: PickupNotification) => void;
@@ -266,8 +269,17 @@ export class FortniteEngine {
   public botNameTags: Map<string, THREE.Sprite> = new Map();
 
   // Remote Online Party Players
-  public remotePlayers: Map<string, { state: RemotePlayerState; rig: CharacterMeshRig }> = new Map();
+  public remotePlayers: Map<string, { state: RemotePlayerState; rig: CharacterMeshRig; respawnsUsed?: number }> = new Map();
   private lastNetworkSyncTime: number = 0;
+
+  // Battle Royale Duel & Respawn Mechanics (3 respawns allowed, 4th death loses)
+  public myRespawnsUsed: number = 0;
+  public readonly maxRespawns: number = 3;
+  public isRespawning: boolean = false;
+  public respawnCountdown: number = 0;
+  public isInvulnerable: boolean = false;
+  public invulnerableTimer: number = 0;
+  private lastDuelSyncTime: number = 0;
 
   // Player Visual Rigs
   public fpsRig: THREE.Group | null = null;
@@ -552,7 +564,7 @@ export class FortniteEngine {
     this.scene.add(this.damageNumberSprites);
 
     // Spawn AI Bots (24 bots for Battle Royale, 1 Pro God Bot for 1v1 Arena)
-    this.spawnBots(this.mode === '1v1_build_fight' ? 1 : 24);
+    this.spawnBots(this.mode === '1v1_build_fight' ? 1 : 0);
 
     // Attach Event Listeners
     this.attachEventListeners();
@@ -564,24 +576,29 @@ export class FortniteEngine {
     this.callbacks.onHealthChange(this.health, this.shield);
     this.callbacks.onMaterialsChange(this.wood, this.stone, this.metal);
     this.callbacks.onInventoryChange(this.inventory, this.activeSlot);
-    this.callbacks.onPlayersLeftChange(this.bots.filter((b) => b.isAlive).length + 1);
+    this.updatePlayersLeftCount();
     this.callbacks.onStormUpdate(this.storm);
     this.callbacks.onSkydivingUpdate(this.isSkydiving, this.isGliding, Math.round(this.playerPos.y));
     this.callbacks.onGoldChange?.(this.gold);
     this.callbacks.onArena1v1Update?.(this.arena1v1State);
-    this.callbacks.onStormUpdate(this.storm);
-    this.callbacks.onSkydivingUpdate(this.isSkydiving, this.isGliding, Math.round(this.playerPos.y));
-
-    // Request pointer lock automatically if possible
-    setTimeout(() => {
-      if (this.canvas) {
-        this.canvas.requestPointerLock();
-      }
-    }, 100);
 
     // Start Simulation Loop
     this.lastTime = performance.now();
     this.loop();
+  }
+
+  public safeRequestPointerLock() {
+    if (!this.canvas || document.pointerLockElement === this.canvas || this.isGameOver) return;
+    try {
+      const promise = (this.canvas as any).requestPointerLock?.();
+      if (promise && typeof promise.catch === 'function') {
+        promise.catch(() => {
+          // Gracefully handle gesture requirements or browser rejection
+        });
+      }
+    } catch {
+      // Gracefully handle iframe or user gesture denial
+    }
   }
 
   private setupLighting() {
@@ -792,15 +809,21 @@ export class FortniteEngine {
       return;
     }
 
+    if (this.mode === 'battle_royale') {
+      // In Battle Royale mode, NO AI bots are spawned - pure real player multiplayer!
+      this.bots = [];
+      return;
+    }
+
     const botWeapons = [
       WEAPON_REGISTRY.ar_scar,
       WEAPON_REGISTRY.shotgun_pump_epic,
       WEAPON_REGISTRY.sniper_bolt_legendary,
       WEAPON_REGISTRY.smg_p90_epic,
-      WEAPON_REGISTRY.ar_blue,
-      WEAPON_REGISTRY.shotgun_pump_blue,
+      WEAPON_REGISTRY.ar_rare,
+      WEAPON_REGISTRY.shotgun_tac_rare,
       WEAPON_REGISTRY.ar_common,
-    ];
+    ].filter(Boolean);
 
     const teamList: TeamType[] = ['OMEGA', 'SHADOW', 'PHOENIX', 'ALPHA'];
     const rankPrefixes = ['[PRO]', '[ELITE]', '[ALPHA]', '[CHAMPION]', '[UNREAL]', '[MASTER]'];
@@ -976,25 +999,431 @@ export class FortniteEngine {
             this.spawnDroppedSupplies(remote.state.x, remote.state.y, remote.state.z);
           }
           this.updatePlayersLeftCount();
+        } else if (action.type === 'friend_eliminated_respawn') {
+          if (action.targetId === multiplayerClient.myPlayerId) {
+            if (!this.isRespawning && !this.isGameOver) {
+              this.handleBattleRoyaleLocalDeath(action.attackerName, action.weaponName, action.isHeadshot);
+            }
+          } else {
+            const remote = this.remotePlayers.get(action.targetId);
+            if (remote) {
+              remote.respawnsUsed = action.respawnsUsed;
+              const left = Math.max(0, this.maxRespawns - (remote.respawnsUsed || 0));
+              this.updateDuelState(
+                `${remote.state.name} eliminated! Respawning (${remote.respawnsUsed}/3 used - ${left} left)`
+              );
+            }
+          }
+        } else if (action.type === 'player_respawning') {
+          const remote = this.remotePlayers.get(action.victimId);
+          if (remote) {
+            remote.respawnsUsed = action.respawnsUsed;
+            this.updateDuelState(`${action.victimName || remote.state.name} is respawning...`);
+          }
+        } else if (action.type === 'player_respawned') {
+          const remote = this.remotePlayers.get(action.playerId);
+          if (remote) {
+            remote.state.isAlive = true;
+            remote.rig.root.visible = true;
+            remote.state.health = 250;
+            remote.state.shield = 100;
+            remote.state.x = action.x;
+            remote.state.y = action.y;
+            remote.state.z = action.z;
+            remote.respawnsUsed = action.respawnsUsed;
+            remote.rig.root.position.set(action.x, action.y, action.z);
+
+            this.callbacks.onEliminationBanner?.({
+              id: 'banner_respawn_' + Date.now(),
+              victim: `${action.playerName || remote.state.name} dropped back into the fight!`,
+              weaponName: 'Respawn Rift',
+              isHeadshot: false,
+              eliminationCount: this.eliminations,
+              xpEarned: 100,
+              timestamp: Date.now(),
+            });
+          }
+          this.updateDuelState(null);
+        } else if (action.type === 'friend_final_elimination') {
+          if (action.victimId === multiplayerClient.myPlayerId) {
+            this.updateDuelState(`FINAL ELIMINATION! ${action.killerName || 'Friend'} won the duel!`);
+            this.triggerEliminated();
+          } else {
+            const remote = this.remotePlayers.get(action.victimId);
+            if (remote) {
+              remote.state.isAlive = false;
+              remote.rig.root.visible = false;
+            }
+            this.updateDuelState(`VICTORY! ${action.victimName || 'Friend'} has exceeded 3 respawns!`);
+            this.triggerVictoryRoyale();
+          }
         }
       },
     });
+
+    // Populate any party members who were already in the room
+    for (const member of multiplayerClient.partyState.members) {
+      if (member.id !== multiplayerClient.myPlayerId && !this.remotePlayers.has(member.id)) {
+        const skinId = member.skinId || 'jonesy';
+        const rig = buildCharacterModel(skinId, 'ar', 'epic');
+        this.scene.add(rig.root);
+        const remote = {
+          state: {
+            id: member.id,
+            name: member.name || 'Online Player',
+            skinId,
+            x: 0,
+            y: 2,
+            z: 0,
+            rotY: 0,
+            pitch: 0,
+            health: 250,
+            shield: 100,
+            isAlive: true,
+            isSkydiving: false,
+            isGliding: false,
+            activeWeaponType: 'ar' as const,
+            weaponRarity: 'epic' as const,
+            isShooting: false,
+          },
+          rig,
+        };
+        const nameTag = createNameTagSprite(remote.state.name, false, 'OMEGA', 1.0, 0.5);
+        rig.root.add(nameTag);
+        this.remotePlayers.set(member.id, remote);
+      }
+    }
+    this.updatePlayersLeftCount();
   }
 
   public updatePlayersLeftCount() {
-    const aliveBots = this.bots.filter((b) => b.isAlive).length;
+    const aliveBots = this.mode === 'battle_royale' ? 0 : this.bots.filter((b) => b.isAlive).length;
     const aliveRemotes = Array.from(this.remotePlayers.values()).filter((r) => r.state.isAlive).length;
     const isPlayerAlive = !this.isGameOver && this.health > 0 ? 1 : 0;
     const total = aliveBots + aliveRemotes + isPlayerAlive;
     this.callbacks.onPlayersLeftChange(total);
 
-    if (aliveBots === 0 && aliveRemotes === 0 && isPlayerAlive === 1 && (this.bots.length > 0 || this.remotePlayers.size > 0)) {
-      this.triggerVictoryRoyale();
+    if (this.mode === 'battle_royale') {
+      // In Battle Royale PvP friend duel, victory is governed by exceeding 3 respawns
+      for (const [_, remote] of this.remotePlayers) {
+        if ((remote.respawnsUsed || 0) > this.maxRespawns && !this.isGameOver) {
+          this.triggerVictoryRoyale();
+          return;
+        }
+      }
+    } else {
+      if (aliveBots === 0 && aliveRemotes === 0 && isPlayerAlive === 1 && (this.bots.length > 0 || this.remotePlayers.size > 0)) {
+        this.triggerVictoryRoyale();
+      }
+    }
+  }
+
+  public updateDuelState(customMessage: string | null = null) {
+    if (this.mode !== 'battle_royale') return;
+
+    let friendName = 'Friend / Opponent';
+    let friendRespawnsUsed = 0;
+    let isDuelActive = false;
+    let friendDistance: number | null = null;
+
+    for (const [_, remote] of this.remotePlayers) {
+      friendName = remote.state.name;
+      friendRespawnsUsed = remote.respawnsUsed || 0;
+      isDuelActive = true;
+      if (remote.state.isAlive) {
+        friendDistance = Math.round(
+          Math.hypot(remote.state.x - this.playerPos.x, remote.state.z - this.playerPos.z)
+        );
+      }
+      break;
+    }
+
+    const duel: BattleRoyaleDuelState = {
+      myRespawnsUsed: this.myRespawnsUsed,
+      friendRespawnsUsed,
+      maxRespawns: this.maxRespawns,
+      friendName,
+      isDuelActive,
+      respawnCountdown: this.isRespawning ? Math.max(1, Math.ceil(this.respawnCountdown)) : null,
+      duelMessage: customMessage,
+      friendDistance,
+    };
+
+    this.callbacks.onDuelUpdate?.(duel);
+  }
+
+  public handleBattleRoyaleLocalDeath(attackerName?: string, weaponName?: string, isHeadshot?: boolean) {
+    if (this.isRespawning || this.isGameOver) return;
+    this.myRespawnsUsed++;
+
+    if (this.myRespawnsUsed <= this.maxRespawns) {
+      // Local player respawns! (1st, 2nd, or 3rd respawn)
+      this.isRespawning = true;
+      this.respawnCountdown = 3.0;
+
+      fortniteAudio.playEliminationSound();
+      this.callbacks.onElimination({
+        id: 'elim_' + Date.now(),
+        killer: attackerName || 'Enemy Player',
+        victim: this.profile.name,
+        weaponName: weaponName || 'Combat Duel',
+        isHeadshot: !!isHeadshot,
+        time: Date.now(),
+      });
+
+      const left = Math.max(0, this.maxRespawns - this.myRespawnsUsed);
+      this.updateDuelState(
+        `Eliminated by ${attackerName || 'Enemy'}! Respawning in 3s... (${this.myRespawnsUsed}/3 respawns used - ${left} left)`
+      );
+
+      // Tell friend we're respawning
+      multiplayerClient.sendPlayerAction({
+        type: 'player_respawning',
+        victimId: multiplayerClient.myPlayerId,
+        victimName: this.profile.name,
+        respawnsUsed: this.myRespawnsUsed,
+        maxRespawns: this.maxRespawns,
+      });
+
+      setTimeout(() => {
+        if (!this.isGameOver) {
+          this.executeRespawn();
+        }
+      }, 3000);
+    } else {
+      // Local player has respawned MORE THAN 3 TIMES (eliminated 4th time)!
+      // Out of respawns -> FRIEND WINS!
+      this.updateDuelState(`Out of respawns (3/3 used)! ${attackerName || 'Friend'} wins the duel!`);
+
+      multiplayerClient.sendPlayerAction({
+        type: 'friend_final_elimination',
+        victimId: multiplayerClient.myPlayerId,
+        victimName: this.profile.name,
+        killerName: attackerName || 'Online Player',
+        weaponName: weaponName || 'Combat Duel',
+      });
+
+      this.triggerEliminated();
+    }
+  }
+
+  public executeRespawn() {
+    this.isRespawning = false;
+    this.respawnCountdown = 0;
+    this.health = 250;
+    this.shield = 100;
+
+    // Pick a sky drop position above the island
+    const spawnRadius = 35 + Math.random() * 35;
+    const angle = Math.random() * Math.PI * 2;
+    this.playerPos.x = Math.cos(angle) * spawnRadius;
+    this.playerPos.z = Math.sin(angle) * spawnRadius;
+    this.playerPos.y = 135;
+    this.playerVel.set(0, -6, 0);
+
+    // Refill ammo for all carried weapons
+    for (const wep of this.inventory) {
+      if (wep && wep.type !== 'pickaxe') {
+        wep.currentAmmo = wep.magazineSize;
+        wep.reserveAmmo = Math.max(wep.reserveAmmo, wep.magazineSize * 4);
+      }
+    }
+    this.callbacks.onInventoryChange(this.inventory, this.activeSlot);
+
+    this.isSkydiving = true;
+    this.isGliding = true;
+    this.isInvulnerable = true;
+    this.invulnerableTimer = 3.5;
+
+    fortniteAudio.playGliderDeploy();
+    this.callbacks.onHealthChange(250, 100);
+    this.callbacks.onSkydivingUpdate(true, true, 135);
+
+    multiplayerClient.sendPlayerAction({
+      type: 'player_respawned',
+      playerId: multiplayerClient.myPlayerId,
+      playerName: this.profile.name,
+      respawnsUsed: this.myRespawnsUsed,
+      x: this.playerPos.x,
+      y: this.playerPos.y,
+      z: this.playerPos.z,
+    });
+
+    this.updateDuelState();
+  }
+
+  public damageRemotePlayer(
+    remoteId: string,
+    remote: { state: RemotePlayerState; rig: CharacterMeshRig; respawnsUsed?: number },
+    dmg: number,
+    isHeadshot: boolean,
+    wepName: string
+  ) {
+    this.shotsHit++;
+    const hadShield = remote.state.shield > 0;
+    if (remote.state.shield > 0) {
+      if (remote.state.shield >= dmg) {
+        remote.state.shield -= dmg;
+      } else {
+        const rem = dmg - remote.state.shield;
+        remote.state.shield = 0;
+        remote.state.health = Math.max(0, remote.state.health - rem);
+      }
+    } else {
+      remote.state.health = Math.max(0, remote.state.health - dmg);
+    }
+
+    this.damageDealt += dmg;
+    this.callbacks.onHitmarker(isHeadshot, hadShield);
+    fortniteAudio.playHitmarker(isHeadshot, hadShield);
+
+    this.addDamageNumber(
+      dmg.toString(),
+      isHeadshot ? '#fbbf24' : hadShield ? '#38bdf8' : '#ffffff',
+      isHeadshot,
+      hadShield,
+      remote.state.x,
+      remote.state.y + 2.2,
+      remote.state.z
+    );
+
+    multiplayerClient.sendPlayerAction({
+      type: 'damage_player',
+      targetId: remoteId,
+      damage: dmg,
+      isHeadshot,
+      attackerName: this.profile.name,
+      weaponName: wepName,
+    });
+
+    if (remote.state.health <= 0) {
+      this.handleRemotePlayerLethal(remoteId, remote, isHeadshot, wepName);
+    }
+  }
+
+  public handleRemotePlayerLethal(
+    remoteId: string,
+    remote: { state: RemotePlayerState; rig: CharacterMeshRig; respawnsUsed?: number },
+    isHeadshot: boolean,
+    wepName: string
+  ) {
+    this.eliminations++;
+    fortniteAudio.playEliminationSound();
+    this.spawnDroppedSupplies(remote.state.x, remote.state.y, remote.state.z);
+
+    if (this.mode === 'battle_royale') {
+      remote.respawnsUsed = (remote.respawnsUsed || 0) + 1;
+
+      if (remote.respawnsUsed <= this.maxRespawns) {
+        // Friend respawns! (1, 2, or 3 respawns used)
+        const respawnsRemaining = this.maxRespawns - remote.respawnsUsed;
+
+        this.callbacks.onElimination({
+          id: 'elim_' + Date.now(),
+          killer: this.profile.name,
+          victim: remote.state.name,
+          weaponName: wepName,
+          isHeadshot,
+          time: Date.now(),
+        });
+
+        this.callbacks.onEliminationBanner?.({
+          id: 'banner_' + Date.now(),
+          victim: `${remote.state.name} (${remote.respawnsUsed}/3 Respawns)`,
+          weaponName: wepName,
+          isHeadshot,
+          eliminationCount: this.eliminations,
+          xpEarned: 350,
+          timestamp: Date.now(),
+        });
+
+        multiplayerClient.sendPlayerAction({
+          type: 'friend_eliminated_respawn',
+          targetId: remoteId,
+          attackerName: this.profile.name,
+          victimName: remote.state.name,
+          weaponName: wepName,
+          isHeadshot,
+          respawnsUsed: remote.respawnsUsed,
+          maxRespawns: this.maxRespawns,
+        });
+
+        this.updateDuelState(
+          `${remote.state.name} eliminated! Respawning (${remote.respawnsUsed}/3 used - ${respawnsRemaining} left)`
+        );
+      } else {
+        // Friend has respawned MORE THAN 3 TIMES (eliminated for the 4th time)!
+        // YOU WIN!
+        remote.state.isAlive = false;
+        remote.rig.root.visible = false;
+
+        this.callbacks.onElimination({
+          id: 'elim_' + Date.now(),
+          killer: this.profile.name,
+          victim: remote.state.name,
+          weaponName: wepName,
+          isHeadshot,
+          time: Date.now(),
+        });
+
+        this.callbacks.onEliminationBanner?.({
+          id: 'banner_' + Date.now(),
+          victim: `VICTORY ROYALE! ${remote.state.name}`,
+          weaponName: wepName,
+          isHeadshot,
+          eliminationCount: this.eliminations,
+          xpEarned: 1200,
+          timestamp: Date.now(),
+        });
+
+        multiplayerClient.sendPlayerAction({
+          type: 'friend_final_elimination',
+          victimId: remoteId,
+          victimName: remote.state.name,
+          killerName: this.profile.name,
+          weaponName: wepName,
+        });
+
+        this.updateDuelState(`VICTORY ROYALE! ${remote.state.name} has exceeded 3 respawns!`);
+        setTimeout(() => {
+          this.triggerVictoryRoyale();
+        }, 1000);
+      }
+    } else {
+      // Standard elimination
+      remote.state.isAlive = false;
+      remote.rig.root.visible = false;
+      this.callbacks.onElimination({
+        id: 'elim_' + Date.now(),
+        killer: this.profile.name,
+        victim: remote.state.name,
+        weaponName: wepName,
+        isHeadshot,
+        time: Date.now(),
+      });
+      this.callbacks.onEliminationBanner?.({
+        id: 'banner_' + Date.now(),
+        victim: remote.state.name,
+        weaponName: wepName,
+        isHeadshot,
+        eliminationCount: this.eliminations,
+        xpEarned: 250,
+        timestamp: Date.now(),
+      });
+      multiplayerClient.sendPlayerAction({
+        type: 'player_eliminated',
+        victimId: remoteId,
+        victimName: remote.state.name,
+        attackerName: this.profile.name,
+        weaponName: wepName,
+        isHeadshot,
+      });
+      this.updatePlayersLeftCount();
     }
   }
 
   public applyDamageFromRemote(dmg: number, isHeadshot: boolean, attackerName: string, weaponName: string) {
-    if (this.isGameOver || this.health <= 0) return;
+    if (this.isGameOver || this.health <= 0 || this.isInvulnerable || this.isRespawning) return;
     const hadShield = this.shield > 0;
     if (this.shield > 0) {
       if (this.shield >= dmg) {
@@ -1013,15 +1442,19 @@ export class FortniteEngine {
     fortniteAudio.playHitmarker(isHeadshot, hadShield);
 
     if (this.health <= 0) {
-      multiplayerClient.sendPlayerAction({
-        type: 'player_eliminated',
-        victimId: multiplayerClient.myPlayerId,
-        victimName: this.profile.name,
-        attackerName: attackerName || 'Online Player',
-        weaponName: weaponName || 'Assault Rifle',
-        isHeadshot,
-      });
-      this.triggerEliminated();
+      if (this.mode === 'battle_royale') {
+        this.handleBattleRoyaleLocalDeath(attackerName, weaponName, isHeadshot);
+      } else {
+        multiplayerClient.sendPlayerAction({
+          type: 'player_eliminated',
+          victimId: multiplayerClient.myPlayerId,
+          victimName: this.profile.name,
+          attackerName: attackerName || 'Online Player',
+          weaponName: weaponName || 'Assault Rifle',
+          isHeadshot,
+        });
+        this.triggerEliminated();
+      }
     }
   }
 
@@ -1038,7 +1471,7 @@ export class FortniteEngine {
 
     this.canvas.addEventListener('click', () => {
       if (!this.isPointerLocked && !this.isGameOver) {
-        this.canvas.requestPointerLock();
+        this.safeRequestPointerLock();
       }
     });
 
@@ -1091,10 +1524,16 @@ export class FortniteEngine {
       this.togglePerspective();
     }
 
-    // Glider toggle in Skydiving mode ('Space')
-    if (e.code === 'Space' && this.isSkydiving) {
-      this.isGliding = !this.isGliding;
-      if (this.isGliding) {
+    // Glider toggle in Skydiving mode or when airborne ('Space')
+    if (e.code === 'Space') {
+      if (this.isSkydiving) {
+        this.isGliding = !this.isGliding;
+        if (this.isGliding) {
+          fortniteAudio.playGliderDeploy();
+        }
+      } else if (!this.isGrounded && this.playerPos.y > 10) {
+        this.isSkydiving = true;
+        this.isGliding = true;
         fortniteAudio.playGliderDeploy();
       }
     }
@@ -1195,7 +1634,7 @@ export class FortniteEngine {
 
   private onMouseDown = (e: MouseEvent) => {
     if (!this.isPointerLocked) {
-      this.canvas.requestPointerLock();
+      this.safeRequestPointerLock();
       return;
     }
 
@@ -1314,7 +1753,7 @@ export class FortniteEngine {
 
   private fireActiveWeapon() {
     const wep = this.getCurrentWeapon();
-    if (!wep || this.isReloading || this.isUsingConsumable || this.isSkydiving || this.activeVehicle) return;
+    if (!wep || this.isReloading || this.isUsingConsumable || this.isSkydiving || this.activeVehicle || this.isRespawning || this.isGameOver) return;
 
     const now = performance.now();
     const fireInterval = 1000 / wep.fireRate;
@@ -1498,80 +1937,9 @@ export class FortniteEngine {
 
     // Hit online remote player if closer than bot
     if (primaryRemote && primaryRemoteDist < primaryBotDist) {
-      this.shotsHit++;
       let totalDmg = wep.damage;
       if (isRemoteHeadshot) totalDmg = Math.round(totalDmg * wep.headshotMultiplier);
-
-      const hadShield = primaryRemote.state.shield > 0;
-      if (primaryRemote.state.shield > 0) {
-        if (primaryRemote.state.shield >= totalDmg) {
-          primaryRemote.state.shield -= totalDmg;
-        } else {
-          const rem = totalDmg - primaryRemote.state.shield;
-          primaryRemote.state.shield = 0;
-          primaryRemote.state.health = Math.max(0, primaryRemote.state.health - rem);
-        }
-      } else {
-        primaryRemote.state.health = Math.max(0, primaryRemote.state.health - totalDmg);
-      }
-
-      this.damageDealt += totalDmg;
-      this.callbacks.onHitmarker(isRemoteHeadshot, hadShield);
-      fortniteAudio.playHitmarker(isRemoteHeadshot, hadShield);
-
-      this.addDamageNumber(
-        totalDmg.toString(),
-        isRemoteHeadshot ? '#fbbf24' : hadShield ? '#38bdf8' : '#ef4444',
-        isRemoteHeadshot,
-        hadShield,
-        primaryRemote.state.x,
-        primaryRemote.state.y + 2.2,
-        primaryRemote.state.z
-      );
-
-      // Send damage to remote player across network
-      multiplayerClient.sendPlayerAction({
-        type: 'damage_player',
-        targetId: primaryRemote.id,
-        damage: totalDmg,
-        isHeadshot: isRemoteHeadshot,
-        attackerName: this.profile.name,
-        weaponName: wep.name,
-      });
-
-      if (primaryRemote.state.health <= 0) {
-        primaryRemote.state.isAlive = false;
-        primaryRemote.rig.root.visible = false;
-        this.eliminations++;
-        this.callbacks.onElimination({
-          id: 'elim_' + Date.now(),
-          killer: this.profile.name,
-          victim: primaryRemote.state.name,
-          weaponName: wep.name,
-          isHeadshot: isRemoteHeadshot,
-          time: Date.now(),
-        });
-        this.callbacks.onEliminationBanner?.({
-          id: 'banner_' + Date.now(),
-          victim: primaryRemote.state.name,
-          weaponName: wep.name,
-          isHeadshot: isRemoteHeadshot,
-          eliminationCount: this.eliminations,
-          xpEarned: 250,
-          timestamp: Date.now(),
-        });
-        fortniteAudio.playEliminationSound();
-        this.spawnDroppedSupplies(primaryRemote.state.x, primaryRemote.state.y, primaryRemote.state.z);
-        multiplayerClient.sendPlayerAction({
-          type: 'player_eliminated',
-          victimId: primaryRemote.id,
-          victimName: primaryRemote.state.name,
-          attackerName: this.profile.name,
-          weaponName: wep.name,
-          isHeadshot: isRemoteHeadshot,
-        });
-        this.updatePlayersLeftCount();
-      }
+      this.damageRemotePlayer(primaryRemote.id, primaryRemote, totalDmg, isRemoteHeadshot, wep.name);
     } else if (primaryBot) {
       this.shotsHit++;
       let totalDmg = wep.damage;
@@ -1720,7 +2088,29 @@ export class FortniteEngine {
       }
     }
 
-    // 3. Check Bots (Only hit if NOT blocked by a wall or building in front!)
+    // 3. Check Remote Online Players (Your Friend / Opponents)
+    let hitRemote: { id: string; remote: { state: RemotePlayerState; rig: CharacterMeshRig; respawnsUsed?: number } } | null = null;
+    let isRemoteHeadshot = false;
+
+    for (const [rId, remote] of this.remotePlayers) {
+      if (!remote.state.isAlive) continue;
+      const rPos = new THREE.Vector3(remote.state.x, remote.state.y + 1.0, remote.state.z);
+      const distToRay = raycaster.ray.distanceToPoint(rPos);
+
+      if (distToRay < 1.15) {
+        const dToPlayer = rayOrigin.distanceTo(rPos);
+        if (dToPlayer > 0.3 && dToPlayer < closestHitDist) {
+          closestHitDist = dToPlayer;
+          hitRemote = { id: rId, remote };
+          hitBot = null;
+          hitBuildingPieceId = null;
+          hitStaticCollider = false;
+          isRemoteHeadshot = raycaster.ray.origin.y + raycaster.ray.direction.y * dToPlayer > remote.state.y + 1.45;
+        }
+      }
+    }
+
+    // 4. Check Bots (Only hit if NOT blocked by a wall or building in front!)
     for (const bot of this.bots) {
       if (!bot.isAlive) continue;
 
@@ -1733,6 +2123,7 @@ export class FortniteEngine {
         if (dToPlayer > 0.3 && dToPlayer < closestHitDist) {
           closestHitDist = dToPlayer;
           hitBot = bot;
+          hitRemote = null;
           hitBuildingPieceId = null;
           hitStaticCollider = false;
           isHeadshot = raycaster.ray.origin.y + raycaster.ray.direction.y * dToPlayer > bot.y + 1.45;
@@ -1767,6 +2158,10 @@ export class FortniteEngine {
     } else if (hitStaticCollider) {
       // Bullet hit static world building / skyscraper / house - stopped completely!
       fortniteAudio.playHarvestHit('stone', false);
+    } else if (hitRemote) {
+      let dmg = wep.damage;
+      if (isRemoteHeadshot) dmg = Math.round(dmg * wep.headshotMultiplier);
+      this.damageRemotePlayer(hitRemote.id, hitRemote.remote, dmg, isRemoteHeadshot, wep.name);
     } else if (hitBot) {
       // Friendly fire protection
       if (hitBot.team === this.playerTeam) {
@@ -1902,6 +2297,29 @@ export class FortniteEngine {
     }
 
     // 3. Raycast Check: Enemy Bots
+    let hitRemoteTarget: { id: string; remote: { state: RemotePlayerState; rig: CharacterMeshRig; respawnsUsed?: number }; hitPoint: THREE.Vector3 } | null = null;
+    for (const [rId, remote] of this.remotePlayers) {
+      if (!remote.state.isAlive) continue;
+      const distToPlayer = Math.hypot(remote.state.x - this.playerPos.x, remote.state.z - this.playerPos.z);
+      if (distToPlayer > playerReachDist + 1.2) continue;
+
+      const rBox = new THREE.Box3(
+        new THREE.Vector3(remote.state.x - 0.75, remote.state.y, remote.state.z - 0.75),
+        new THREE.Vector3(remote.state.x + 0.75, remote.state.y + 2.1, remote.state.z + 0.75)
+      );
+      const rIntersect = new THREE.Vector3();
+      if (raycaster.ray.intersectBox(rBox, rIntersect)) {
+        const d = origin.distanceTo(rIntersect);
+        if (d < closestDist) {
+          closestDist = d;
+          hitRemoteTarget = { id: rId, remote, hitPoint: rIntersect.clone() };
+          hitBuilding = null;
+          hitHarvestable = null;
+          hitBotTarget = null;
+        }
+      }
+    }
+
     for (const bot of this.bots) {
       if (!bot.isAlive) continue;
       const distToPlayer = Math.hypot(bot.x - this.playerPos.x, bot.z - this.playerPos.z);
@@ -1919,6 +2337,7 @@ export class FortniteEngine {
           hitBotTarget = { bot, hitPoint: botIntersect.clone() };
           hitBuilding = null;
           hitHarvestable = null;
+          hitRemoteTarget = null;
         }
       }
     }
@@ -2086,6 +2505,12 @@ export class FortniteEngine {
           hitPoint.z
         );
       }
+      return;
+    }
+
+    if (hitRemoteTarget) {
+      this.damageRemotePlayer(hitRemoteTarget.id, hitRemoteTarget.remote, 20, false, 'Harvesting Tool');
+      fortniteAudio.playHarvestHit('stone', false);
       return;
     }
 
@@ -2396,7 +2821,7 @@ export class FortniteEngine {
   public spawnDroppedSupplies(x: number, y: number, z: number, weapon?: FortniteWeapon) {
     const supplyItems: DroppedSupply[] = [];
 
-    if (weapon) {
+    if (weapon && weapon.name) {
       supplyItems.push({
         id: `drop_wep_${Date.now()}_${Math.random()}`,
         type: 'weapon',
@@ -2406,8 +2831,8 @@ export class FortniteEngine {
         y: y + 0.4,
         z: z + (Math.random() - 0.5) * 1.5,
         rotY: 0,
-        name: weapon.name,
-        color: weapon.color,
+        name: weapon.name || 'Weapon',
+        color: weapon.color || '#94a3b8',
       });
     }
 
@@ -2784,11 +3209,17 @@ export class FortniteEngine {
       WEAPON_REGISTRY.shotgun_pump_legendary,
       WEAPON_REGISTRY.sniper_bolt_legendary,
       WEAPON_REGISTRY.smg_p90_epic,
-      WEAPON_REGISTRY.rocket_launcher_gold,
-      WEAPON_REGISTRY.shotgun_tactical_gold,
+      WEAPON_REGISTRY.rpg_legendary,
+      WEAPON_REGISTRY.shotgun_tac_legendary,
+      WEAPON_REGISTRY.blade_kinetic_exotic,
+      WEAPON_REGISTRY.minigun_legendary,
       WEAPON_REGISTRY.chug_splash,
-    ];
-    const pickedGun = rareGuns[Math.floor(Math.random() * rareGuns.length)];
+      WEAPON_REGISTRY.chug_jug,
+    ].filter(Boolean);
+
+    const pickedGun = (rareGuns.length > 0
+      ? rareGuns[Math.floor(Math.random() * rareGuns.length)]
+      : WEAPON_REGISTRY.ar_scar) || WEAPON_REGISTRY.ar_scar;
 
     const emptySlot = this.inventory.findIndex((s, idx) => idx > 0 && s === null);
     if (emptySlot !== -1) {
@@ -2809,9 +3240,9 @@ export class FortniteEngine {
       this.callbacks.onItemCollected({
         id: `col_chest_${Date.now()}`,
         title: 'Opened Loot Chest',
-        subtitle: `+80 Wood • +50 Shield • +75 Gold • ${pickedGun.name}`,
+        subtitle: `+80 Wood • +50 Shield • +75 Gold • ${pickedGun?.name || 'Legendary Loot'}`,
         icon: '📦',
-        rarity: pickedGun.rarity,
+        rarity: pickedGun?.rarity || 'legendary',
         type: 'chest',
         color: '#f59e0b',
         timestamp: Date.now(),
@@ -2923,6 +3354,13 @@ export class FortniteEngine {
   public checkTeamVictoryCondition() {
     if (this.isGameOver) return;
     if (this.mode === '1v1_build_fight') return;
+    if (this.mode === 'battle_royale') {
+      const aliveRemotes = Array.from(this.remotePlayers.values()).filter((r) => r.state.isAlive);
+      if (this.remotePlayers.size > 0 && aliveRemotes.length === 0 && this.health > 0) {
+        this.triggerVictoryRoyale();
+      }
+      return;
+    }
     const aliveEnemyBots = this.bots.filter((b) => b.isAlive && b.team !== this.playerTeam);
     const aliveRemotes = Array.from(this.remotePlayers.values()).filter((r) => r.state.isAlive);
     if (aliveEnemyBots.length === 0 && aliveRemotes.length === 0) {
@@ -2942,7 +3380,7 @@ export class FortniteEngine {
 
     const stats: MatchStats = {
       placement: 1,
-      totalPlayers: this.bots.length + 1,
+      totalPlayers: this.mode === 'battle_royale' ? Math.max(2, this.remotePlayers.size + 1) : this.bots.length + 1,
       eliminations: this.eliminations,
       damageDealt: this.damageDealt,
       damageTaken: this.damageTaken,
@@ -2963,6 +3401,13 @@ export class FortniteEngine {
 
   public triggerEliminated() {
     if (this.isGameOver) return;
+
+    if (this.mode === 'battle_royale') {
+      if (this.myRespawnsUsed <= this.maxRespawns && !this.isRespawning) {
+        this.handleBattleRoyaleLocalDeath();
+        return;
+      }
+    }
 
     if (this.mode === '1v1_build_fight') {
       this.arena1v1State.botScore++;
@@ -3003,14 +3448,15 @@ export class FortniteEngine {
     }
 
     this.isGameOver = true;
-    const remaining = this.bots.filter((b) => b.isAlive).length + 1;
+    const remaining = this.mode === 'battle_royale' ? 2 : this.bots.filter((b) => b.isAlive).length + 1;
+    const totalPlayers = this.mode === 'battle_royale' ? Math.max(2, this.remotePlayers.size + 1) : this.bots.length + 1;
     const baseCoins = 50;
     const eliminationBonusCoins = this.eliminations * 40;
     const vbucksEarned = baseCoins + eliminationBonusCoins;
 
     const stats: MatchStats = {
       placement: remaining,
-      totalPlayers: this.bots.length + 1,
+      totalPlayers,
       eliminations: this.eliminations,
       damageDealt: this.damageDealt,
       damageTaken: this.damageTaken,
@@ -3414,6 +3860,18 @@ export class FortniteEngine {
         }
       }
 
+      // Update duel respawn and invulnerability timers
+      if (this.invulnerableTimer > 0) {
+        this.invulnerableTimer -= dt;
+        if (this.invulnerableTimer <= 0) {
+          this.isInvulnerable = false;
+        }
+      }
+
+      if (this.isRespawning) {
+        this.respawnCountdown = Math.max(0, this.respawnCountdown - dt);
+      }
+
       if (this.activeVehicle) {
         this.updateVehicleDriving(dt);
       } else {
@@ -3581,7 +4039,8 @@ export class FortniteEngine {
         col.maxY !== undefined
       ) {
         if (x >= col.minX - 0.25 && x <= col.maxX + 0.25 && z >= col.minZ - 0.25 && z <= col.maxZ + 0.25) {
-          if (currentY >= col.maxY - 1.5) {
+          const colMinY = col.minY ?? 0;
+          if (currentY >= colMinY - 0.9 && col.maxY <= currentY + 1.2) {
             highestY = Math.max(highestY, col.maxY);
           }
         }
@@ -3594,7 +4053,8 @@ export class FortniteEngine {
       ) {
         const dist = Math.hypot(x - col.x, z - col.z);
         if (dist <= col.radius + 0.25) {
-          if (currentY >= col.maxY - 1.5) {
+          const colMinY = col.minY ?? 0;
+          if (currentY >= colMinY - 0.9 && col.maxY <= currentY + 1.2) {
             highestY = Math.max(highestY, col.maxY);
           }
         }
@@ -3876,6 +4336,7 @@ export class FortniteEngine {
     const resolved = this.checkAndResolveSolidCollisions(nextX, nextZ, this.playerPos.y);
     this.playerPos.x = resolved.x;
     this.playerPos.z = resolved.z;
+    const prevFallY = this.playerPos.y;
     this.playerPos.y += this.playerVel.y * dt;
 
     // Solid Ceiling Collision: Prevent jumping upward through player-built floors or cone roofs
@@ -3899,10 +4360,28 @@ export class FortniteEngine {
     this.playerPos.x = Math.max(-270, Math.min(270, this.playerPos.x));
     this.playerPos.z = Math.max(-270, Math.min(270, this.playerPos.z));
 
+    // Skyscraper Ground Ascenders & Rooftop Super Bounce Pads
+    for (let i = 0; i < SKYSCRAPER_LAUNCH_PADS.length; i++) {
+      const pad = SKYSCRAPER_LAUNCH_PADS[i];
+      const dx = this.playerPos.x - pad.x;
+      const dz = this.playerPos.z - pad.z;
+      if (dx * dx + dz * dz <= 2.2 * 2.2 && Math.abs(this.playerPos.y - pad.y) <= 2.8) {
+        if (this.playerVel.y <= 1.5) {
+          const deltaH = Math.max(14, pad.targetY - this.playerPos.y + 3.0);
+          this.playerVel.y = Math.sqrt(2 * 32.0 * deltaH);
+          this.isGrounded = false;
+          this.isSliding = false;
+          fortniteAudio.playJump();
+          this.screenShake = 0.12;
+          break;
+        }
+      }
+    }
+
     const groundElevation = this.getGroundElevationAt(
       this.playerPos.x,
       this.playerPos.z,
-      this.playerPos.y
+      Math.max(prevFallY, this.playerPos.y)
     );
 
     if (this.playerPos.y <= groundElevation) {
@@ -4066,7 +4545,11 @@ export class FortniteEngine {
       fortniteAudio.playStormTick();
 
       if (this.health <= 0) {
-        this.triggerEliminated();
+        if (this.mode === 'battle_royale') {
+          this.handleBattleRoyaleLocalDeath('The Storm', 'Storm Radiation', false);
+        } else {
+          this.triggerEliminated();
+        }
       }
     }
 
@@ -4147,6 +4630,11 @@ export class FortniteEngine {
           this.update1v1Bot(bot, dt, time);
         }
       }
+      return;
+    }
+
+    // In Battle Royale mode, no bots exist or run
+    if (this.mode === 'battle_royale' || this.bots.length === 0) {
       return;
     }
 

@@ -14,6 +14,7 @@ import {
   PickupNotification,
   GameMode,
   Arena1v1State,
+  BattleRoyaleDuelState,
 } from '../types';
 import { RARITY_COLORS } from '../data/fortniteData';
 import {
@@ -82,6 +83,7 @@ interface FortniteHUDProps {
   gameMode?: GameMode;
   selectedSkin?: string;
   arena1v1State?: Arena1v1State | null;
+  duelState?: BattleRoyaleDuelState | null;
   botDifficulty?: 'casual' | 'normal' | 'pro' | 'god';
   onChangeBotDifficulty?: (diff: 'casual' | 'normal' | 'pro' | 'god') => void;
   onReset1v1Builds?: () => void;
@@ -131,6 +133,7 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
   gameMode,
   selectedSkin = 'jonesy',
   arena1v1State,
+  duelState,
   botDifficulty = 'pro',
   onChangeBotDifficulty,
   onReset1v1Builds,
@@ -286,6 +289,31 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
         </div>
       )}
 
+      {/* BATTLE ROYALE RESPAWN BANNER / OVERLAY */}
+      {gameMode === 'battle_royale' && duelState?.respawnCountdown !== null && duelState?.respawnCountdown !== undefined && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3 animate-in zoom-in-95 duration-200 pointer-events-none">
+          <div className="flex flex-col items-center px-10 py-5 rounded-3xl backdrop-blur-2xl border-2 border-cyan-400 bg-gradient-to-b from-cyan-900/90 via-slate-900/95 to-blue-950/90 text-white shadow-[0_0_60px_rgba(6,182,212,0.6)]">
+            <div className="flex items-center gap-2 mb-1">
+              <RotateCcw className="w-6 h-6 text-cyan-400 animate-spin" />
+              <span className="font-mono text-sm uppercase tracking-widest font-black text-cyan-200">
+                COMBAT RESPAWN ACTIVE
+              </span>
+            </div>
+            <h2 className="text-4xl sm:text-5xl font-black tracking-tight uppercase text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-amber-300 drop-shadow-md">
+              DROPPING BACK IN {duelState.respawnCountdown}s
+            </h2>
+            <div className="flex items-center gap-3 mt-3 px-5 py-1.5 rounded-full bg-black/60 border border-cyan-400/40 text-xs font-mono">
+              <span className="text-slate-300">Respawns Used:</span>
+              <span className="font-black text-rose-400">{duelState.myRespawnsUsed} / 3</span>
+              <span className="text-slate-400">|</span>
+              <span className="text-emerald-400 font-bold">
+                {Math.max(0, 3 - duelState.myRespawnsUsed)} RESPAWNS REMAINING
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1V1 ROUND OVER BANNER */}
       {gameMode === '1v1_build_fight' && arena1v1State?.isRoundOver && (
         <div className="absolute top-36 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2 animate-in zoom-in-90 duration-200">
@@ -383,8 +411,80 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
           )}
         </div>
 
-        {/* Center: 1v1 Scoreboard OR Tactical Compass */}
-        {gameMode === '1v1_build_fight' ? (
+        {/* Center: Battle Royale PvP Duel Scoreboard OR 1v1 Scoreboard OR Tactical Compass */}
+        {gameMode === 'battle_royale' && duelState?.isDuelActive ? (
+          <div className="flex flex-col items-center gap-1.5 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="flex items-center gap-4 px-5 py-2 rounded-3xl bg-black/85 backdrop-blur-md border-2 border-amber-400/80 shadow-[0_0_25px_rgba(245,158,11,0.4)] text-white">
+              {/* Local Player */}
+              <div className="flex items-center gap-2">
+                <span className="font-black text-xs sm:text-sm text-cyan-400 tracking-wider">YOU</span>
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3].map((num) => (
+                    <span
+                      key={num}
+                      className={`w-3 h-3 rounded-full border transition-all ${
+                        num <= (duelState.myRespawnsUsed || 0)
+                          ? 'bg-rose-500 border-rose-300 shadow-[0_0_6px_#f43f5e]'
+                          : 'bg-emerald-500/80 border-emerald-300 shadow-[0_0_4px_#10b981]'
+                      }`}
+                      title={num <= duelState.myRespawnsUsed ? `Respawn ${num} used` : `Respawn ${num} available`}
+                    />
+                  ))}
+                </div>
+                <span className="font-mono text-xs font-bold text-slate-300 ml-1">
+                  ({duelState.myRespawnsUsed}/3)
+                </span>
+              </div>
+
+              <div className="flex flex-col items-center px-2">
+                <span className="text-[9px] font-mono text-amber-300 font-black tracking-widest uppercase">
+                  FRIEND DUEL
+                </span>
+                <span className="text-[10px] font-bold text-slate-300">
+                  3 RESPAWNS MAX • 4TH LOSS
+                </span>
+              </div>
+
+              {/* Remote Friend */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3].map((num) => (
+                    <span
+                      key={num}
+                      className={`w-3 h-3 rounded-full border transition-all ${
+                        num <= (duelState.friendRespawnsUsed || 0)
+                          ? 'bg-rose-500 border-rose-300 shadow-[0_0_6px_#f43f5e]'
+                          : 'bg-emerald-500/80 border-emerald-300 shadow-[0_0_4px_#10b981]'
+                      }`}
+                      title={num <= duelState.friendRespawnsUsed ? `Respawn ${num} used` : `Respawn ${num} available`}
+                    />
+                  ))}
+                </div>
+                <span className="font-mono text-xs font-bold text-slate-300">
+                  ({duelState.friendRespawnsUsed}/3)
+                </span>
+                <span className="font-black text-xs sm:text-sm text-amber-400 tracking-wider uppercase truncate max-w-[120px]">
+                  {duelState.friendName}
+                </span>
+              </div>
+            </div>
+
+            {/* Friend Distance & Duel status */}
+            <div className="flex items-center gap-2 text-[10px] font-mono font-bold text-slate-200 bg-black/75 px-3 py-0.5 rounded-full border border-white/20">
+              {duelState.friendDistance !== null ? (
+                <span className="text-amber-300">🎯 {duelState.friendName}: {duelState.friendDistance}m away</span>
+              ) : (
+                <span className="text-slate-400">{duelState.friendName} in match</span>
+              )}
+              {duelState.duelMessage && (
+                <>
+                  <span>•</span>
+                  <span className="text-cyan-300 animate-pulse">{duelState.duelMessage}</span>
+                </>
+              )}
+            </div>
+          </div>
+        ) : gameMode === '1v1_build_fight' ? (
           <div className="flex flex-col items-center gap-1.5">
             <div className="flex items-center gap-4 px-5 py-2 rounded-3xl bg-black/85 backdrop-blur-md border-2 border-amber-400/80 shadow-[0_0_25px_rgba(245,158,11,0.4)] text-white">
               <div className="flex items-center gap-2">

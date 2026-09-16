@@ -190,8 +190,8 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     {
       id: 'battle_royale',
       name: 'BATTLE ROYALE',
-      tag: 'ONLINE MULTIPLAYER',
-      desc: 'Play with anyone online! Connect with room code or quick match to drop into the same game together.',
+      tag: 'PURE PVP • REAL PLAYERS ONLY',
+      desc: 'Real players only — zero AI bots! Drop into the island with friends or online players for pure Battle Royale PvP.',
       icon: '🌐',
       bg: 'from-amber-600/70 to-red-950/90',
       onlineOnly: true,

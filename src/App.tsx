@@ -19,6 +19,7 @@ import {
   PickupNotification,
   Arena1v1State,
   BattlegroundMap,
+  BattleRoyaleDuelState,
 } from './types';
 import { WEAPON_REGISTRY, DEFAULT_PICKAXE } from './data/fortniteData';
 import { FortniteEngine } from './game/fortniteEngine';
@@ -169,6 +170,7 @@ export default function App() {
   const [nearVehiclePrompt, setNearVehiclePrompt] = useState<string | null>(null);
   const [nearSupplyPrompt, setNearSupplyPrompt] = useState<string | null>(null);
   const [arena1v1State, setArena1v1State] = useState<Arena1v1State | null>(null);
+  const [duelState, setDuelState] = useState<BattleRoyaleDuelState | null>(null);
 
   // Skydiving & Touchdown state
   const [isSkydiving, setIsSkydiving] = useState<boolean>(true);
@@ -343,6 +345,9 @@ export default function App() {
         onArena1v1Update: (arenaState) => {
           setArena1v1State({ ...arenaState });
         },
+        onDuelUpdate: (duel) => {
+          setDuelState(duel ? { ...duel } : null);
+        },
         onMatchEnd: (isVictory, stats) => {
           fortniteAudio.stopMusic();
           if (isVictory) {
@@ -436,7 +441,16 @@ export default function App() {
 
   const handleRequestPointerLock = () => {
     if (canvasRef.current && !document.pointerLockElement) {
-      canvasRef.current.requestPointerLock();
+      try {
+        const res = (canvasRef.current as any).requestPointerLock?.();
+        if (res && typeof res.catch === 'function') {
+          res.catch(() => {
+            // Handled: browser or iframe restrictions
+          });
+        }
+      } catch {
+        // Handled: gesture requirement
+      }
     }
   };
 
@@ -536,6 +550,7 @@ export default function App() {
           reticleColor={profile.settings.reticleColor}
           gameMode={selectedMode}
           arena1v1State={arena1v1State}
+          duelState={duelState}
           botDifficulty={botDifficulty}
           onChangeBotDifficulty={handleSetBotDifficulty}
           onReset1v1Builds={() => engineRef.current?.resetAllBuildings()}

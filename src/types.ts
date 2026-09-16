@@ -96,6 +96,17 @@ export interface Arena1v1State {
   countdown: number;
 }
 
+export interface BattleRoyaleDuelState {
+  myRespawnsUsed: number;
+  friendRespawnsUsed: number;
+  maxRespawns: number; // 3 respawns allowed (eliminated 4th time loses)
+  friendName: string;
+  isDuelActive: boolean;
+  respawnCountdown: number | null;
+  duelMessage: string | null;
+  friendDistance?: number | null;
+}
+
 export interface BuildingPiece {
   id: string;
   type: BuildType;

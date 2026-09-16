@@ -239,6 +239,10 @@ export class MultiplayerClient {
         this.updatePartyFromPayload(data.room);
       }
 
+      if (data.gameState === 'playing' && !this.isGameRunning) {
+        this.handlers.onMatchStart?.(data.seed || 123456, data.room?.code || this.partyState.code);
+      }
+
       if (data.lastEventId) {
         this.lastEventId = Math.max(this.lastEventId, data.lastEventId);
       }
@@ -412,7 +416,13 @@ export class MultiplayerClient {
   }
 
   public async connectWithCode(code: string, playerInfo: { name: string; skinId: string; level: number }) {
-    const cleanCode = (code || '').trim().toUpperCase() || generateInitialCode();
+    let cleanCode = (code || '').trim().toUpperCase();
+    if (cleanCode && !cleanCode.startsWith('ROYALE-') && cleanCode.length <= 5 && /^[A-Z0-9]+$/.test(cleanCode)) {
+      cleanCode = `ROYALE-${cleanCode}`;
+    }
+    if (!cleanCode) {
+      cleanCode = generateInitialCode();
+    }
     this.activePlayerInfo = { ...playerInfo };
 
     // Update local state immediately
