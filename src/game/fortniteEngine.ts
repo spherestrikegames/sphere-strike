@@ -563,8 +563,14 @@ export class FortniteEngine {
     // Setup Damage Numbers
     this.scene.add(this.damageNumberSprites);
 
-    // Spawn AI Bots (24 bots for Battle Royale, 1 Pro God Bot for 1v1 Arena)
-    this.spawnBots(this.mode === '1v1_build_fight' ? 1 : 0);
+    // Spawn AI Bots (AI Knockout mode gets 24 bots, 1v1 Arena gets 1 opponent bot, Battle Royale gets 0)
+    if (this.mode === 'first_person_royale') {
+      this.spawnBots(24);
+    } else if (this.mode === '1v1_build_fight') {
+      this.spawnBots(1);
+    } else {
+      this.spawnBots(0);
+    }
 
     // Attach Event Listeners
     this.attachEventListeners();
@@ -809,8 +815,8 @@ export class FortniteEngine {
       return;
     }
 
-    if (this.mode === 'battle_royale') {
-      // In Battle Royale mode, NO AI bots are spawned - pure real player multiplayer!
+    if (this.mode !== 'first_person_royale') {
+      // In Battle Royale and other modes, NO AI bots are spawned - pure real player multiplayer!
       this.bots = [];
       return;
     }

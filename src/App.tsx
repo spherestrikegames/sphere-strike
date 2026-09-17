@@ -255,6 +255,7 @@ export default function App() {
     setStone(150);
     setMetal(80);
     setEliminations(0);
+    setPlayersLeft(selectedMode === 'first_person_royale' ? 25 : Math.max(2, multiplayerClient.partyState.members.length));
     setMatchStats(null);
     setIsSkydiving(true);
     setIsGliding(false);
