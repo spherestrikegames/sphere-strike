@@ -23,6 +23,9 @@ import {
   WifiOff,
   Zap,
   RotateCw,
+  Share2,
+  Link2,
+  Server,
 } from 'lucide-react';
 
 interface FortniteLobbyProps {
@@ -55,6 +58,9 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   const [isReady, setIsReady] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [ping, setPing] = useState<number>(24);
+  const [publicRooms, setPublicRooms] = useState<Array<{ code: string; playerCount: number; gameState: string; isGlobal?: boolean }>>([]);
   const [party, setParty] = useState<PartyState>(() => ({ ...multiplayerClient.partyState }));
   const [partyError, setPartyError] = useState<string | null>(null);
 
@@ -62,6 +68,30 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     FORTNITE_SKINS.find((s) => s.id === profile.selectedSkin) || FORTNITE_SKINS[0];
 
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
+
+  // Poll public rooms list for global server browser
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRooms = async () => {
+      try {
+        const res = await fetch('/api/parties/public');
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.rooms) {
+            setPublicRooms(data.rooms);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+    fetchRooms();
+    const interval = setInterval(fetchRooms, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     // Start Lobby Background Theme Music on user interaction
@@ -83,6 +113,9 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
         if (connected) {
           setPartyError(null);
         }
+      },
+      onPingUpdate: (latencyMs) => {
+        setPing(latencyMs);
       },
       onMatchStart: () => {
         setIsReady(true);
@@ -128,6 +161,24 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     }
   };
 
+  const handleCopyLink = () => {
+    const link = multiplayerClient.getShareableLink();
+    navigator.clipboard.writeText(link);
+    setCopiedLink(true);
+    fortniteAudio.playUiClick();
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
+
+  const handleJoinGlobalRoom = () => {
+    setParty((prev) => ({ ...prev, code: 'ROYALE-GLOBAL' }));
+    multiplayerClient.connectWithCode('ROYALE-GLOBAL', {
+      name: profile.name,
+      skinId: profile.selectedSkin,
+      level: profile.level,
+    });
+    fortniteAudio.playUiClick();
+  };
+
   const handleGenerateNewCode = () => {
     const newCode = multiplayerClient.generateNewCode({
       name: profile.name,
@@ -171,7 +222,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     fortniteAudio.playUiClick();
 
     if (party.code) {
-      multiplayerClient.startPartyMatch();
+      multiplayerClient.startPartyMatch(selectedMode, selectedMap);
     }
     setTimeout(() => {
       onStartMatch();
@@ -595,13 +646,16 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
             </div>
 
             {/* Active Room Code Box */}
-            <div className="p-3 rounded-2xl bg-black/60 border border-white/10 flex flex-col gap-1.5">
+            <div className="p-3 rounded-2xl bg-black/60 border border-white/10 flex flex-col gap-2">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400 font-bold uppercase tracking-wider">YOUR ROOM CODE</span>
-                <span className="text-cyan-400 font-mono text-[10px]">ONLINE & READY</span>
+                <span className="text-slate-400 font-bold uppercase tracking-wider">YOUR ONLINE ROOM</span>
+                <div className="flex items-center gap-1.5 font-mono text-[10px] text-emerald-400 font-bold">
+                  <Wifi className="w-3 h-3 text-emerald-400" />
+                  <span>{ping}ms • {party.isConnected ? 'ONLINE' : 'CONNECTING'}</span>
+                </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="flex-1 px-3 py-2 rounded-xl bg-slate-950/80 border border-amber-500/40 text-amber-300 font-mono font-black text-base tracking-widest text-center shadow-inner select-all">
+                <div className="flex-1 px-3 py-2 rounded-xl bg-slate-950/80 border border-amber-500/40 text-amber-300 font-mono font-black text-sm tracking-widest text-center shadow-inner select-all truncate">
                   {party.code || multiplayerClient.partyState.code || 'ROYALE-LIVE'}
                 </div>
                 <button
@@ -616,16 +670,63 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                 <button
                   type="button"
                   onClick={handleCopyCode}
-                  className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
-                  title="Copy room code to clipboard"
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/30 text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+                  title="Copy room code only"
                 >
-                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'COPIED' : 'COPY'}</span>
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied ? 'COPIED' : 'CODE'}</span>
                 </button>
               </div>
-              <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
-                Share this code with anyone online or open another tab to join the exact same match!
+
+              {/* 1-Click Copy Direct Invite Link */}
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 active:scale-95 transition-all cursor-pointer border border-emerald-400/40"
+                title="Copy direct invite link to send to friends on other computers or phones"
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-200" />
+                    <span>INVITE LINK COPIED! (SHARE WITH FRIENDS)</span>
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="w-4 h-4 text-emerald-200" />
+                    <span>COPY DIRECT INVITE LINK (CROSS-DEVICE)</span>
+                  </>
+                )}
+              </button>
+
+              <p className="text-[10px] text-slate-400 leading-tight">
+                Send the link to friends on any PC, laptop, or phone to drop in the exact same game!
               </p>
+            </div>
+
+            {/* Quick Match & Global Server Buttons */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleJoinGlobalRoom}
+                className={`py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                  party.code === 'ROYALE-GLOBAL'
+                    ? 'bg-amber-500 text-slate-950 border-amber-300 ring-2 ring-amber-400 shadow-lg'
+                    : 'bg-slate-800/90 hover:bg-slate-700 text-amber-300 border-amber-500/30'
+                }`}
+                title="Join the public global server where all online players meet"
+              >
+                <Globe className="w-3.5 h-3.5 text-amber-400" />
+                <span>GLOBAL SERVER</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleQuickMatch}
+                className="py-2 px-2.5 rounded-xl bg-gradient-to-r from-purple-700/80 to-indigo-700/80 hover:from-purple-600 hover:to-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-purple-400/30 shadow-md transition-all cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-yellow-300" />
+                <span>QUICK MATCH</span>
+              </button>
             </div>
 
             {/* Join Room by Code Form */}
@@ -641,19 +742,9 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                 type="submit"
                 className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-black transition-all shadow-md cursor-pointer"
               >
-                CONNECT
+                JOIN
               </button>
             </form>
-
-            {/* Quick Match Button */}
-            <button
-              type="button"
-              onClick={handleQuickMatch}
-              className="py-2 px-3 rounded-xl bg-gradient-to-r from-purple-700/80 to-indigo-700/80 hover:from-purple-600 hover:to-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-2 border border-purple-400/30 shadow-md transition-all cursor-pointer"
-            >
-              <Zap className="w-3.5 h-3.5 text-yellow-300" />
-              <span>QUICK MATCH (ANYONE ONLINE)</span>
-            </button>
 
             {/* Multi-player Notice if multiple players connected */}
             {party.members.length > 1 && (

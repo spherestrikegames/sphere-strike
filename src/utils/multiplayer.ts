@@ -2,13 +2,14 @@ import { PartyMember, PartyState, RemotePlayerState } from '../types';
 
 export type MultiplayerEventHandler = {
   onPartyUpdate?: (party: PartyState) => void;
-  onMatchStart?: (seed: number, roomCode: string) => void;
+  onMatchStart?: (seed: number, roomCode: string, mode?: string, map?: string) => void;
   onPlayerSync?: (playerId: string, data: Partial<RemotePlayerState>) => void;
   onPlayerAction?: (playerId: string, action: any) => void;
   onPlayerLeave?: (playerId: string) => void;
   onChatMessage?: (sender: string, text: string, time: number) => void;
   onError?: (msg: string) => void;
   onConnectionChange?: (connected: boolean) => void;
+  onPingUpdate?: (pingMs: number) => void;
 };
 
 function generateInitialCode(): string {
@@ -27,8 +28,11 @@ export class MultiplayerClient {
 
   public partyState: PartyState;
 
-  private transport: 'ws' | 'http' | 'mesh' = 'http';
+  public transport: 'ws' | 'http' | 'mesh' = 'http';
+  public pingMs: number = 24;
   private pollTimer: any = null;
+  private reconnectTimer: any = null;
+  private heartbeatTimer: any = null;
   private lastEventId: number = 0;
   private channel: BroadcastChannel | null = null;
   private isGameRunning: boolean = false;
@@ -90,6 +94,9 @@ export class MultiplayerClient {
     if (this.handlers.onConnectionChange) {
       this.handlers.onConnectionChange(true);
     }
+    if (this.handlers.onPingUpdate) {
+      this.handlers.onPingUpdate(this.pingMs);
+    }
   }
 
   public setGameRunning(running: boolean) {
@@ -105,6 +112,27 @@ export class MultiplayerClient {
       this.connectWithCode(newCode, this.activePlayerInfo);
     }
     return newCode;
+  }
+
+  public getShareableLink(code?: string): string {
+    if (typeof window === 'undefined') return '';
+    const targetCode = (code || this.partyState.code || '').trim().toUpperCase();
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', targetCode);
+    return url.toString();
+  }
+
+  public async fetchPublicRooms(): Promise<Array<{ code: string; playerCount: number; gameState: string; isGlobal?: boolean }>> {
+    try {
+      const res = await fetch('/api/parties/public', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        return Array.isArray(data.rooms) ? data.rooms : [];
+      }
+    } catch {
+      // ignore
+    }
+    return [];
   }
 
   /**
@@ -142,6 +170,36 @@ export class MultiplayerClient {
     return true;
   }
 
+  private scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (typeof window !== 'undefined') {
+        this.tryWebSocket();
+      }
+    }, 2500);
+  }
+
+  private startHeartbeat() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ type: 'ping', time: Date.now() }));
+        } catch {
+          // ignore
+        }
+      }
+    }, 6000);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
   private tryWebSocket() {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
@@ -160,6 +218,7 @@ export class MultiplayerClient {
         this.partyState.isConnected = true;
         this.partyState.error = null;
         this.handlers.onConnectionChange?.(true);
+        this.startHeartbeat();
 
         if (this.partyState.code) {
           socket.send(
@@ -178,6 +237,13 @@ export class MultiplayerClient {
       socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+          if (msg.type === 'pong') {
+            if (msg.time) {
+              this.pingMs = Math.max(1, Math.round(Date.now() - msg.time));
+              this.handlers.onPingUpdate?.(this.pingMs);
+            }
+            return;
+          }
           this.handleMessage(msg);
         } catch (e) {
           console.error('Multiplayer WS parse error', e);
@@ -187,15 +253,21 @@ export class MultiplayerClient {
       socket.onerror = () => {
         this.transport = 'http';
         this.ws = null;
+        this.stopHeartbeat();
+        this.scheduleReconnect();
       };
 
       socket.onclose = () => {
         this.transport = 'http';
         this.ws = null;
+        this.stopHeartbeat();
+        this.scheduleReconnect();
       };
     } catch {
       this.transport = 'http';
       this.ws = null;
+      this.stopHeartbeat();
+      this.scheduleReconnect();
     }
   }
 
@@ -321,20 +393,22 @@ export class MultiplayerClient {
 
     switch (type) {
       case 'match:start': {
-        this.handlers.onMatchStart?.(payload.seed || 123456, payload.roomCode || this.partyState.code);
+        this.handlers.onMatchStart?.(payload.seed || 123456, payload.roomCode || this.partyState.code, payload.mode, payload.map);
         break;
       }
 
       case 'player:sync': {
-        if (senderId) {
-          this.handlers.onPlayerSync?.(senderId, payload.data || payload);
+        const pId = senderId || payload.playerId;
+        if (pId && pId !== this.myPlayerId) {
+          this.handlers.onPlayerSync?.(pId, payload.data || payload);
         }
         break;
       }
 
       case 'player:action': {
-        if (senderId) {
-          this.handlers.onPlayerAction?.(senderId, payload.action || payload);
+        const pId = senderId || payload.playerId;
+        if (pId && pId !== this.myPlayerId) {
+          this.handlers.onPlayerAction?.(pId, payload.action || payload);
         }
         break;
       }
@@ -383,27 +457,30 @@ export class MultiplayerClient {
       }
 
       case 'match:start': {
-        this.handlers.onMatchStart?.(msg.seed, msg.roomCode || this.partyState.code);
+        this.handlers.onMatchStart?.(msg.seed, msg.roomCode || this.partyState.code, msg.mode, msg.map);
         break;
       }
 
       case 'player:sync': {
-        if (msg.playerId && msg.playerId !== this.myPlayerId) {
-          this.handlers.onPlayerSync?.(msg.playerId, msg.data);
+        const pId = msg.playerId || msg.senderId;
+        if (pId && pId !== this.myPlayerId) {
+          this.handlers.onPlayerSync?.(pId, msg.data);
         }
         break;
       }
 
       case 'player:action': {
-        if (msg.playerId && msg.playerId !== this.myPlayerId) {
-          this.handlers.onPlayerAction?.(msg.playerId, msg.action);
+        const pId = msg.playerId || msg.senderId;
+        if (pId && pId !== this.myPlayerId) {
+          this.handlers.onPlayerAction?.(pId, msg.action);
         }
         break;
       }
 
       case 'player:leave': {
-        if (msg.playerId && msg.playerId !== this.myPlayerId) {
-          this.handlers.onPlayerLeave?.(msg.playerId);
+        const pId = msg.playerId || msg.senderId;
+        if (pId && pId !== this.myPlayerId) {
+          this.handlers.onPlayerLeave?.(pId);
         }
         break;
       }
@@ -469,14 +546,19 @@ export class MultiplayerClient {
   }
 
   public async quickMatch(playerInfo: { name: string; skinId: string; level: number }) {
-    let targetCode = 'PUBLIC-ROYALE';
+    let targetCode = 'ROYALE-GLOBAL';
 
     try {
       const res = await fetch('/api/parties/public');
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.rooms) && data.rooms.length > 0) {
-          targetCode = data.rooms[0].code;
+          const activeRoom = data.rooms.find((r: any) => r.playerCount > 0 && r.playerCount < 16);
+          if (activeRoom?.code) {
+            targetCode = activeRoom.code;
+          } else {
+            targetCode = data.rooms[0].code || 'ROYALE-GLOBAL';
+          }
         }
       }
     } catch {
@@ -501,7 +583,7 @@ export class MultiplayerClient {
     }
   }
 
-  public startPartyMatch() {
+  public startPartyMatch(mode?: string, map?: string) {
     const seed = Math.floor(Math.random() * 1000000);
 
     // Notify local channel
@@ -510,11 +592,13 @@ export class MultiplayerClient {
       senderId: this.myPlayerId,
       seed,
       roomCode: this.partyState.code,
+      mode,
+      map,
     });
 
     // Notify WS
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'match:start' }));
+      this.ws.send(JSON.stringify({ type: 'match:start', mode, map }));
     }
 
     // Notify HTTP backend
@@ -522,11 +606,11 @@ export class MultiplayerClient {
       fetch('/api/parties/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: this.partyState.code, playerId: this.myPlayerId }),
+        body: JSON.stringify({ code: this.partyState.code, playerId: this.myPlayerId, mode, map }),
       }).catch(() => {});
     }
 
-    this.handlers.onMatchStart?.(seed, this.partyState.code);
+    this.handlers.onMatchStart?.(seed, this.partyState.code, mode, map);
   }
 
   public sendPlayerSync(data: Partial<RemotePlayerState>) {

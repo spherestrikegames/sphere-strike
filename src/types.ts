@@ -54,11 +54,24 @@ export interface FortniteWeapon {
   explosionRadius?: number;
   chargeTime?: number;
   mods?: WeaponMods;
-  // Unique Weapon Progression Traits
+  // Unique Weapon Progression & Archetype Traits
   recoilPattern?: 'laser_zero' | 'vertical_kick' | 'balanced_drift' | 'heavy_kick' | 'spread_bloom';
   elementalEffect?: 'incendiary' | 'electric' | 'cryo' | 'void' | 'kinetic';
   utilityPerk?: string;
   perkDescription?: string;
+  // Differentiated Combat Mechanics (1v1.LOL / 2v2.io competitive gunplay)
+  bulletBehavior?: 'hitscan' | 'projectile';
+  projectileSpeed?: number; // m/s for travel time
+  projectileGravity?: number; // m/s^2 drop
+  recoilPitch?: number; // vertical camera kick
+  recoilYaw?: number; // horizontal camera drift
+  bloomSpreadMin?: number; // base/ADS spread
+  bloomSpreadMax?: number; // spray/moving spread bloom
+  bloomRecoverySpeed?: number; // bloom return rate
+  falloffStart?: number; // distance in meters where damage starts dropping
+  falloffEnd?: number; // distance in meters where damage reaches min
+  falloffMinMultiplier?: number; // minimum damage ratio at max distance
+  pelletCount?: number; // number of pellets for shotguns
 }
 
 export interface ShopWeaponItem {

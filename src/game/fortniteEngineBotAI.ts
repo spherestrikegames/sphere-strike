@@ -7,35 +7,44 @@ import type { FortniteEngine } from './fortniteEngine';
 import { getBotDifficultyConfig } from './fortniteEngine';
 
 
-export function isLineOfSightBlockedImpl(engine: FortniteEngine, origin: THREE.Vector3, target: THREE.Vector3): boolean {
-  const dir = target.clone().sub(origin);
-  const maxDist = dir.length();
-  if (maxDist < 0.2) return false;
-  dir.normalize();
+const _losDir = new THREE.Vector3();
+const _losRay = new THREE.Ray();
+const _losBox = new THREE.Box3();
+const _losIntersect = new THREE.Vector3();
 
-  const ray = new THREE.Ray(origin, dir);
-  const sharedBox = new THREE.Box3();
-  const sharedIntersect = new THREE.Vector3();
+const _scratchBotPos = new THREE.Vector3();
+const _scratchPlayerHead = new THREE.Vector3();
+const _scratchTracerEnd = new THREE.Vector3();
+const _scratchSpreadOffset = new THREE.Vector3();
+
+export function isLineOfSightBlockedImpl(engine: FortniteEngine, origin: THREE.Vector3, target: THREE.Vector3): boolean {
+  _losDir.subVectors(target, origin);
+  const maxDist = _losDir.length();
+  if (maxDist < 0.2) return false;
+  _losDir.multiplyScalar(1 / maxDist);
+
+  _losRay.origin.copy(origin);
+  _losRay.direction.copy(_losDir);
 
   // Check static world buildings and structures along the ray
   const colliders = engine.spatialGrid.queryRay(origin.x, origin.z, target.x, target.z);
   for (let i = 0; i < colliders.length; i++) {
     const sc = colliders[i];
     if (sc.type === 'box' && sc.minX !== undefined && sc.maxX !== undefined) {
-      sharedBox.min.set(sc.minX, sc.minY || 0, sc.minZ!);
-      sharedBox.max.set(sc.maxX, sc.maxY || 100, sc.maxZ!);
-      if (ray.intersectBox(sharedBox, sharedIntersect)) {
-        const hitDist = origin.distanceTo(sharedIntersect);
+      _losBox.min.set(sc.minX, sc.minY || 0, sc.minZ!);
+      _losBox.max.set(sc.maxX, sc.maxY || 100, sc.maxZ!);
+      if (_losRay.intersectBox(_losBox, _losIntersect)) {
+        const hitDist = origin.distanceTo(_losIntersect);
         if (hitDist > 0.3 && hitDist < maxDist - 0.4) {
           return true;
         }
       }
     } else if (sc.type === 'cylinder' && sc.x !== undefined && sc.z !== undefined && sc.radius !== undefined) {
       const r = sc.radius;
-      sharedBox.min.set(sc.x - r, sc.minY || 0, sc.z - r);
-      sharedBox.max.set(sc.x + r, sc.maxY || 100, sc.z + r);
-      if (ray.intersectBox(sharedBox, sharedIntersect)) {
-        const hitDist = origin.distanceTo(sharedIntersect);
+      _losBox.min.set(sc.x - r, sc.minY || 0, sc.z - r);
+      _losBox.max.set(sc.x + r, sc.maxY || 100, sc.z + r);
+      if (_losRay.intersectBox(_losBox, _losIntersect)) {
+        const hitDist = origin.distanceTo(_losIntersect);
         if (hitDist > 0.3 && hitDist < maxDist - 0.4) {
           return true;
         }
@@ -47,10 +56,10 @@ export function isLineOfSightBlockedImpl(engine: FortniteEngine, origin: THREE.V
   const pieces = engine.spatialGrid.queryBuildingPiecesRay(origin.x, origin.z, target.x, target.z);
   for (let i = 0; i < pieces.length; i++) {
     const piece = pieces[i];
-    sharedBox.min.set(piece.x - 2.1, piece.y - 0.2, piece.z - 2.1);
-    sharedBox.max.set(piece.x + 2.1, piece.y + 4.2, piece.z + 2.1);
-    if (ray.intersectBox(sharedBox, sharedIntersect)) {
-      const hitDist = origin.distanceTo(sharedIntersect);
+    _losBox.min.set(piece.x - 2.1, piece.y - 0.2, piece.z - 2.1);
+    _losBox.max.set(piece.x + 2.1, piece.y + 4.2, piece.z + 2.1);
+    if (_losRay.intersectBox(_losBox, _losIntersect)) {
+      const hitDist = origin.distanceTo(_losIntersect);
       if (hitDist > 0.3 && hitDist < maxDist - 0.4) {
         return true;
       }
@@ -58,6 +67,124 @@ export function isLineOfSightBlockedImpl(engine: FortniteEngine, origin: THREE.V
   }
 
   return false;
+}
+
+export function processBotStormDamage(bot: BotPlayer, engine: FortniteEngine, dt: number): boolean {
+  const distToStormCenter = Math.hypot(
+    bot.x - engine.storm.currentCenterX,
+    bot.z - engine.storm.currentCenterZ
+  );
+
+  if (distToStormCenter > engine.storm.currentRadius) {
+    const stormTickDmg = (engine.storm.dps + 2.0) * dt;
+    bot.health -= stormTickDmg;
+
+    // Bot runs towards safe storm center
+    const dirToCenterX = engine.storm.currentCenterX - bot.x;
+    const dirToCenterZ = engine.storm.currentCenterZ - bot.z;
+    const len = Math.hypot(dirToCenterX, dirToCenterZ) || 1;
+    bot.vx = (dirToCenterX / len) * 5.5;
+    bot.vz = (dirToCenterZ / len) * 5.5;
+    bot.rotY = Math.atan2(-dirToCenterX, -dirToCenterZ);
+
+    const nTag = engine.botNameTags.get(bot.id);
+    if (nTag) {
+      updateNameTagSprite(
+        nTag,
+        bot.name,
+        true,
+        bot.team,
+        Math.max(0, bot.health / 100),
+        Math.max(0, bot.shield / 50)
+      );
+    }
+
+    if (bot.health <= 0) {
+      bot.isAlive = false;
+      const rig = engine.botMeshes.get(bot.id);
+      if (rig) engine.scene.remove(rig.root);
+      if (nTag) engine.scene.remove(nTag);
+
+      const log: EliminationLog = {
+        id: `storm_elim_${Date.now()}_${Math.random()}`,
+        killer: 'The Storm ⚡',
+        victim: bot.name,
+        weaponName: 'Storm Surge',
+        isHeadshot: false,
+        time: Date.now(),
+      };
+      engine.callbacks.onElimination(log);
+      engine.spawnDroppedSupplies(bot.x, bot.y, bot.z, bot.weapon);
+
+      const remaining = engine.bots.filter((b) => b.isAlive).length + 1;
+      engine.callbacks.onPlayersLeftChange(remaining);
+
+      const aliveEnemies = engine.bots.filter((b) => b.isAlive && b.team !== engine.playerTeam);
+      if (aliveEnemies.length === 0) {
+        engine.triggerVictoryRoyale();
+      }
+      return true; // Eliminated
+    }
+  }
+  return false;
+}
+
+export function executeBotCombatAI(
+  bot: BotPlayer,
+  engine: FortniteEngine,
+  time: number,
+  distToPlayer: number,
+  dx: number,
+  dz: number
+) {
+  bot.rotY = Math.atan2(-dx, -dz) + Math.sin(time * 3) * 0.15;
+  const strafe = Math.sin(time * 1.5 + parseInt(bot.id.replace('bot_', ''))) * 2.5;
+  bot.vx = Math.cos(bot.rotY) * strafe;
+  bot.vz = -Math.sin(bot.rotY) * strafe;
+
+  if (time - bot.lastShotTime > bot.reactionTimer) {
+    bot.lastShotTime = time;
+
+    _scratchBotPos.set(bot.x, bot.y + 1.2, bot.z);
+    _scratchPlayerHead.set(engine.playerPos.x, engine.playerPos.y + 1.4, engine.playerPos.z);
+    const isBlocked = engine.isLineOfSightBlocked(_scratchBotPos, _scratchPlayerHead);
+
+    if (!isBlocked) {
+      if (Math.random() < bot.accuracy) {
+        const dmg = 4 + Math.floor(Math.random() * 4);
+        if (engine.shield > 0) {
+          engine.shield = Math.max(0, engine.shield - dmg);
+        } else {
+          engine.health = Math.max(0, engine.health - dmg);
+        }
+        engine.damageTaken += dmg;
+        engine.callbacks.onHealthChange(engine.health, engine.shield);
+        engine.callbacks.onDamageTaken();
+        fortniteAudio.playHitmarker(false, engine.shield > 0);
+
+        if (engine.health <= 0) {
+          engine.triggerEliminated();
+        }
+      }
+    }
+
+    if (distToPlayer < 60) {
+      fortniteAudio.playGunshotAR(false);
+      if (distToPlayer < 35) {
+        fortniteAudio.playBulletCrack();
+      }
+      if (isBlocked) {
+        _scratchTracerEnd.set(_scratchBotPos.x + dx * 0.4, _scratchBotPos.y + 0.5, _scratchBotPos.z + dz * 0.4);
+      } else {
+        _scratchTracerEnd.set(
+          engine.playerPos.x + (Math.random() - 0.5) * 4,
+          engine.playerPos.y + 1.4,
+          engine.playerPos.z + (Math.random() - 0.5) * 4
+        );
+      }
+      engine.createBulletTracer(_scratchBotPos, _scratchTracerEnd);
+    }
+  }
 }
 
 export function updateBotsImpl(engine: FortniteEngine, dt: number) {
@@ -123,92 +250,26 @@ export function updateBotsImpl(engine: FortniteEngine, dt: number) {
     const bot = engine.bots[i];
     if (!bot.isAlive) continue;
 
-    const botPos = new THREE.Vector3(bot.x, bot.y + 1.2, bot.z);
-    const playerHeadPos = new THREE.Vector3(engine.playerPos.x, engine.playerPos.y + 1.4, engine.playerPos.z);
-    const distToPlayer = engine.playerPos.distanceTo(new THREE.Vector3(bot.x, bot.y, bot.z));
+    const dx = engine.playerPos.x - bot.x;
+    const dz = engine.playerPos.z - bot.z;
+    const distToPlayer = Math.hypot(dx, engine.playerPos.y - bot.y, dz);
 
-    // --- STORM DAMAGE & ELIMINATION FOR BOTS OUTSIDE SAFE ZONE ---
-    const distToStormCenter = Math.hypot(
-      bot.x - engine.storm.currentCenterX,
-      bot.z - engine.storm.currentCenterZ
-    );
-
-    if (distToStormCenter > engine.storm.currentRadius) {
-      // AI bot takes storm damage per second
-      const stormTickDmg = (engine.storm.dps + 2.0) * dt;
-      bot.health -= stormTickDmg;
-
-      // Bot runs towards the center of the safe eye to escape the storm!
-      const dirToCenterX = engine.storm.currentCenterX - bot.x;
-      const dirToCenterZ = engine.storm.currentCenterZ - bot.z;
-      const len = Math.hypot(dirToCenterX, dirToCenterZ) || 1;
-      bot.vx = (dirToCenterX / len) * 5.5;
-      bot.vz = (dirToCenterZ / len) * 5.5;
-      bot.rotY = Math.atan2(-dirToCenterX, -dirToCenterZ);
-
-      // Update real-time health bar
-      const nTag = engine.botNameTags.get(bot.id);
-      if (nTag) {
-        updateNameTagSprite(
-          nTag,
-          bot.name,
-          true,
-          bot.team,
-          Math.max(0, bot.health / 100),
-          Math.max(0, bot.shield / 50)
-        );
-      }
-
-      // Bot dies in the storm when health reaches 0
-      if (bot.health <= 0) {
-        bot.isAlive = false;
-        const rig = engine.botMeshes.get(bot.id);
-        if (rig) {
-          engine.scene.remove(rig.root);
-        }
-        if (nTag) {
-          engine.scene.remove(nTag);
-        }
-
-        const log: EliminationLog = {
-          id: `storm_elim_${Date.now()}_${Math.random()}`,
-          killer: 'The Storm ⚡',
-          victim: bot.name,
-          weaponName: 'Storm Surge',
-          isHeadshot: false,
-          time: Date.now(),
-        };
-        engine.callbacks.onElimination(log);
-
-        // Drop bot supplies upon storm death
-        engine.spawnDroppedSupplies(bot.x, bot.y, bot.z, bot.weapon);
-
-        const remaining = engine.bots.filter((b) => b.isAlive).length + 1;
-        engine.callbacks.onPlayersLeftChange(remaining);
-
-        const aliveEnemies = engine.bots.filter((b) => b.isAlive && b.team !== engine.playerTeam);
-        if (aliveEnemies.length === 0) {
-          engine.triggerVictoryRoyale();
-        }
-        continue;
-      }
+    // 1. Process Storm Damage
+    if (processBotStormDamage(bot, engine, dt)) {
+      continue;
     }
 
-    // Friendly bot on Alpha team follows player and defends!
+    // 2. Friendly bot on Alpha team follows player and defends
     const isFriendly = bot.team === engine.playerTeam;
 
     if (isFriendly) {
       if (distToPlayer > 8.0) {
-        const dx = engine.playerPos.x - bot.x;
-        const dz = engine.playerPos.z - bot.z;
         bot.rotY = Math.atan2(-dx, -dz);
         bot.vx = -Math.sin(bot.rotY) * 6.5;
         bot.vz = -Math.cos(bot.rotY) * 6.5;
       } else {
         bot.vx = 0;
         bot.vz = 0;
-        const dx = engine.playerPos.x - bot.x;
-        const dz = engine.playerPos.z - bot.z;
         bot.rotY = Math.atan2(-dx, -dz);
       }
     } else {
@@ -217,50 +278,7 @@ export function updateBotsImpl(engine: FortniteEngine, dt: number) {
       }
 
       if (bot.state === 'combat') {
-        const dx = engine.playerPos.x - bot.x;
-        const dz = engine.playerPos.z - bot.z;
-        bot.rotY = Math.atan2(-dx, -dz) + (Math.sin(time * 3) * 0.15);
-
-        const strafe = Math.sin(time * 1.5 + parseInt(bot.id.replace('bot_', ''))) * 2.5;
-        bot.vx = Math.cos(bot.rotY) * strafe;
-        bot.vz = -Math.sin(bot.rotY) * strafe;
-
-        if (time - bot.lastShotTime > bot.reactionTimer) {
-          bot.lastShotTime = time;
-
-          // Check if bullet trajectory is blocked by a building or player wall
-          const isBlocked = engine.isLineOfSightBlocked(botPos, playerHeadPos);
-
-          if (!isBlocked) {
-            if (Math.random() < bot.accuracy) {
-              const dmg = 4 + Math.floor(Math.random() * 4);
-              if (engine.shield > 0) {
-                engine.shield = Math.max(0, engine.shield - dmg);
-              } else {
-                engine.health = Math.max(0, engine.health - dmg);
-              }
-              engine.damageTaken += dmg;
-              engine.callbacks.onHealthChange(engine.health, engine.shield);
-              engine.callbacks.onDamageTaken();
-              fortniteAudio.playHitmarker(false, engine.shield > 0);
-
-              if (engine.health <= 0) {
-                engine.triggerEliminated();
-              }
-            }
-          }
-
-          if (distToPlayer < 60) {
-            fortniteAudio.playGunshotAR(false);
-            if (distToPlayer < 35) {
-              fortniteAudio.playBulletCrack();
-            }
-            const tracerEnd = isBlocked
-              ? botPos.clone().add(new THREE.Vector3(dx * 0.4, 0.5, dz * 0.4))
-              : engine.playerPos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 4, 1.4, (Math.random() - 0.5) * 4));
-            engine.createBulletTracer(botPos, tracerEnd);
-          }
-        }
+        executeBotCombatAI(bot, engine, time, distToPlayer, dx, dz);
       } else {
         const angle = time * 0.2 + parseInt(bot.id.replace('bot_', ''));
         bot.rotY = angle;
@@ -291,8 +309,8 @@ export function updateBotsImpl(engine: FortniteEngine, dt: number) {
 }
 
 export function update1v1BotImpl(engine: FortniteEngine, bot: BotPlayer, dt: number, time: number) {
-  const botPos = new THREE.Vector3(bot.x, bot.y + 1.2, bot.z);
-  const playerHeadPos = new THREE.Vector3(engine.playerPos.x, engine.playerPos.y + 1.4, engine.playerPos.z);
+  _scratchBotPos.set(bot.x, bot.y + 1.2, bot.z);
+  _scratchPlayerHead.set(engine.playerPos.x, engine.playerPos.y + 1.4, engine.playerPos.z);
   const dx = engine.playerPos.x - bot.x;
   const dz = engine.playerPos.z - bot.z;
   const distToPlayer = Math.hypot(dx, dz);
@@ -369,7 +387,7 @@ export function update1v1BotImpl(engine: FortniteEngine, bot: BotPlayer, dt: num
   if (time - bot.lastShotTime > shotInterval && !engine.arena1v1State.isRoundOver) {
     bot.lastShotTime = time;
 
-    const isBlocked = engine.isLineOfSightBlocked(botPos, playerHeadPos);
+    const isBlocked = engine.isLineOfSightBlocked(_scratchBotPos, _scratchPlayerHead);
 
     if (!isBlocked) {
       const hitChance = isCloseRange ? config.hitChanceClose : config.hitChanceFar;
@@ -404,23 +422,30 @@ export function update1v1BotImpl(engine: FortniteEngine, bot: BotPlayer, dt: num
     if (isCloseRange) {
       fortniteAudio.playGunshotPump(false);
       for (let p = 0; p < 4; p++) {
-        const spreadOffset = new THREE.Vector3(
-          (Math.random() - 0.5) * 1.2,
-          (Math.random() - 0.5) * 1.2 + 1.2,
-          (Math.random() - 0.5) * 1.2
-        );
-        const endPos = isBlocked
-          ? botPos.clone().add(new THREE.Vector3(dx * 0.4, 0.4, dz * 0.4))
-          : engine.playerPos.clone().add(spreadOffset);
-        engine.createBulletTracer(botPos, endPos);
+        if (isBlocked) {
+          _scratchTracerEnd.set(_scratchBotPos.x + dx * 0.4, _scratchBotPos.y + 0.4, _scratchBotPos.z + dz * 0.4);
+        } else {
+          _scratchTracerEnd.set(
+            engine.playerPos.x + (Math.random() - 0.5) * 1.2,
+            engine.playerPos.y + (Math.random() - 0.5) * 1.2 + 1.2,
+            engine.playerPos.z + (Math.random() - 0.5) * 1.2
+          );
+        }
+        engine.createBulletTracer(_scratchBotPos, _scratchTracerEnd);
       }
     } else {
       fortniteAudio.playGunshotAR(false);
       if (distToPlayer < 35) fortniteAudio.playBulletCrack();
-      const endPos = isBlocked
-        ? botPos.clone().add(new THREE.Vector3(dx * 0.4, 0.4, dz * 0.4))
-        : engine.playerPos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 1.3, (Math.random() - 0.5) * 2));
-      engine.createBulletTracer(botPos, endPos);
+      if (isBlocked) {
+        _scratchTracerEnd.set(_scratchBotPos.x + dx * 0.4, _scratchBotPos.y + 0.4, _scratchBotPos.z + dz * 0.4);
+      } else {
+        _scratchTracerEnd.set(
+          engine.playerPos.x + (Math.random() - 0.5) * 2,
+          engine.playerPos.y + 1.3,
+          engine.playerPos.z + (Math.random() - 0.5) * 2
+        );
+      }
+      engine.createBulletTracer(_scratchBotPos, _scratchTracerEnd);
     }
   }
 

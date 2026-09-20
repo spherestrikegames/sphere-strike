@@ -6,8 +6,10 @@ import { SolidCollider, BuildingPiece } from '../types';
  */
 export class SpatialColliderGrid {
   private cellSize: number;
-  private grid: Map<string, SolidCollider[]> = new Map();
-  private buildingGrid: Map<string, BuildingPiece[]> = new Map();
+  private grid: Map<number, SolidCollider[]> = new Map();
+  private buildingGrid: Map<number, BuildingPiece[]> = new Map();
+  private seenColliders: Set<SolidCollider> = new Set();
+  private seenPieces: Set<string> = new Set();
 
   constructor(cellSize: number = 24.0) {
     this.cellSize = cellSize;
@@ -17,13 +19,15 @@ export class SpatialColliderGrid {
     return Math.floor(val / this.cellSize);
   }
 
-  private cellKey(cx: number, cz: number): string {
-    return `${cx}:${cz}`;
+  private cellKey(cx: number, cz: number): number {
+    return ((cx + 32768) << 16) | ((cz + 32768) & 0xffff);
   }
 
   public clear(): void {
     this.grid.clear();
     this.buildingGrid.clear();
+    this.seenColliders.clear();
+    this.seenPieces.clear();
   }
 
   public clearBuildingPieces(): void {
@@ -111,7 +115,8 @@ export class SpatialColliderGrid {
     }
 
     const results: SolidCollider[] = [];
-    const seen = new Set<SolidCollider>();
+    const seen = this.seenColliders;
+    seen.clear();
 
     for (let cx = minCX; cx <= maxCX; cx++) {
       for (let cz = minCZ; cz <= maxCZ; cz++) {
@@ -175,7 +180,8 @@ export class SpatialColliderGrid {
     }
 
     const results: BuildingPiece[] = [];
-    const seen = new Set<string>();
+    const seen = this.seenPieces;
+    seen.clear();
 
     for (let cx = minCX; cx <= maxCX; cx++) {
       for (let cz = minCZ; cz <= maxCZ; cz++) {
@@ -214,7 +220,8 @@ export class SpatialColliderGrid {
     const maxCZ = this.cellCoord(maxZ);
 
     const results: BuildingPiece[] = [];
-    const seen = new Set<string>();
+    const seen = this.seenPieces;
+    seen.clear();
 
     for (let cx = minCX; cx <= maxCX; cx++) {
       for (let cz = minCZ; cz <= maxCZ; cz++) {

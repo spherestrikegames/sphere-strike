@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WeaponType, WeaponRarity } from '../types';
 
-export function createFirstPersonWeaponRig(weaponType: WeaponType, rarity: WeaponRarity): THREE.Group {
+export function createFirstPersonWeaponRig(weaponType: WeaponType, rarity: WeaponRarity, weaponId?: string): THREE.Group {
   const rig = new THREE.Group();
 
   // Arm / Glove (Player Hands in FPS view)
@@ -32,7 +32,7 @@ export function createFirstPersonWeaponRig(weaponType: WeaponType, rarity: Weapo
   }
 
   // Weapon Model Attachment
-  const weaponMesh = createWeaponMesh(weaponType, rarity);
+  const weaponMesh = createWeaponMesh(weaponType, rarity, weaponId);
   weaponMesh.position.set(0.18, -0.15, -0.42);
   weaponMesh.name = 'fps_weapon_mesh';
   rig.add(weaponMesh);
@@ -40,7 +40,7 @@ export function createFirstPersonWeaponRig(weaponType: WeaponType, rarity: Weapo
   return rig;
 }
 
-export function createWeaponMesh(type: WeaponType, rarity: WeaponRarity): THREE.Group {
+export function createWeaponMesh(type: WeaponType, rarity: WeaponRarity, weaponId?: string): THREE.Group {
   const group = new THREE.Group();
 
   const darkGunMat = new THREE.MeshStandardMaterial({
@@ -80,56 +80,254 @@ export function createWeaponMesh(type: WeaponType, rarity: WeaponRarity): THREE.
     group.scale.set(0.85, 0.85, 0.85);
     group.rotateX(Math.PI / 6);
   } else if (type === 'ar') {
-    // SCAR Assault Rifle
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.55), scarMat);
-    group.add(body);
+    if (weaponId === 'rifle_burst' || weaponId?.includes('burst')) {
+      // Tactical Bullpup 3-Round Burst Marksman Rifle (FAMAS / AUG style)
+      const tacticalPolymerMat = new THREE.MeshStandardMaterial({
+        color: 0x1e293b, // Tactical dark slate polymer
+        metalness: 0.6,
+        roughness: 0.45,
+      });
+      const gunmetalMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a, // Deep gunmetal receiver
+        metalness: 0.9,
+        roughness: 0.25,
+      });
+      const marksmanCyanMat = new THREE.MeshStandardMaterial({
+        color: 0x0284c7, // Precision cyan marksman accents
+        metalness: 0.8,
+        roughness: 0.3,
+      });
+      const reflexGlassMat = new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.7,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.4,
+      });
 
-    const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.015, 0.35, 8),
-      darkGunMat
-    );
-    barrel.rotateX(Math.PI / 2);
-    barrel.position.set(0, 0.03, -0.42);
-    group.add(barrel);
+      // Bullpup Main Receiver Chassis
+      const chassis = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.13, 0.46), tacticalPolymerMat);
+      chassis.position.set(0, 0, 0.02);
+      group.add(chassis);
 
-    // Curved Magazine
-    const mag = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.16, 0.08),
-      new THREE.MeshStandardMaterial({ color: 0x27272a })
-    );
-    mag.rotateX(-0.2);
-    mag.position.set(0, -0.1, -0.06);
-    group.add(mag);
+      // Rear Bullpup Stock & Buttplate
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.15, 0.22), tacticalPolymerMat);
+      stock.position.set(0, -0.01, 0.28);
+      group.add(stock);
 
-    // Iron Sights / Picatinny Rail
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.3), darkGunMat);
-    rail.position.set(0, 0.075, -0.05);
-    group.add(rail);
+      const buttPad = new THREE.Mesh(
+        new THREE.BoxGeometry(0.066, 0.16, 0.025),
+        new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.9 })
+      );
+      buttPad.position.set(0, -0.01, 0.39);
+      group.add(buttPad);
 
-    group.scale.set(1.1, 1.1, 1.1);
+      // Rear Bullpup Curved 30-round Magazine (behind the grip)
+      const mag = new THREE.Mesh(
+        new THREE.BoxGeometry(0.042, 0.17, 0.08),
+        new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.4 })
+      );
+      mag.rotateX(-0.25);
+      mag.position.set(0, -0.13, 0.2);
+      group.add(mag);
+
+      // Pistol Grip (forward of magazine)
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.14, 0.06), tacticalPolymerMat);
+      grip.rotateX(0.28);
+      grip.position.set(0, -0.11, -0.04);
+      group.add(grip);
+
+      // Trigger Guard & Trigger
+      const triggerGuard = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.08), gunmetalMat);
+      triggerGuard.position.set(0, -0.08, -0.07);
+      group.add(triggerGuard);
+
+      // Elevated Marksman Carry-Handle & Optical Sight Bridge
+      const carryHandle = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.075, 0.32), gunmetalMat);
+      carryHandle.position.set(0, 0.1, -0.02);
+      group.add(carryHandle);
+
+      // Marksman Reflex Sight Lens
+      const opticLens = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.04, 0.015), reflexGlassMat);
+      opticLens.position.set(0, 0.13, -0.08);
+      group.add(opticLens);
+
+      // Cyan Marksman Accent Stripes along chassis
+      const accentStripe = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.015, 0.28), marksmanCyanMat);
+      accentStripe.position.set(0, 0.03, 0.05);
+      group.add(accentStripe);
+
+      // Extended Precision Rifled Barrel
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.014, 0.014, 0.38, 8),
+        gunmetalMat
+      );
+      barrel.rotateX(Math.PI / 2);
+      barrel.position.set(0, 0.02, -0.38);
+      group.add(barrel);
+
+      // Compensator Muzzle Brake (Triple Vents for 3-Round Burst control)
+      const brake = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.019, 0.018, 0.07, 8),
+        marksmanCyanMat
+      );
+      brake.rotateX(Math.PI / 2);
+      brake.position.set(0, 0.02, -0.58);
+      group.add(brake);
+
+      // Front Angled Foregrip for recoil stabilization
+      const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.09, 0.05), tacticalPolymerMat);
+      foregrip.rotateX(-0.25);
+      foregrip.position.set(0, -0.09, -0.22);
+      group.add(foregrip);
+
+      group.scale.set(1.05, 1.05, 1.05);
+    } else {
+      // Standard SCAR Assault Rifle
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.55), scarMat);
+      group.add(body);
+
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.015, 0.015, 0.35, 8),
+        darkGunMat
+      );
+      barrel.rotateX(Math.PI / 2);
+      barrel.position.set(0, 0.03, -0.42);
+      group.add(barrel);
+
+      // Curved Magazine
+      const mag = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.16, 0.08),
+        new THREE.MeshStandardMaterial({ color: 0x27272a })
+      );
+      mag.rotateX(-0.2);
+      mag.position.set(0, -0.1, -0.06);
+      group.add(mag);
+
+      // Iron Sights / Picatinny Rail
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.3), darkGunMat);
+      rail.position.set(0, 0.075, -0.05);
+      group.add(rail);
+
+      group.scale.set(1.1, 1.1, 1.1);
+    }
   } else if (type === 'shotgun') {
-    // Pump Shotgun (SPAS-12)
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.11, 0.65), darkGunMat);
-    group.add(body);
+    if (weaponId?.includes('double_barrel') || weaponId === 'shotgun_double_barrel' || !weaponId) {
+      // Authentic Break-Action Double-Barrel Shotgun
+      const stockMat = new THREE.MeshStandardMaterial({
+        color: 0x451a03, // Dark walnut wood stock
+        roughness: 0.65,
+      });
+      const receiverMat = new THREE.MeshStandardMaterial({
+        color: 0x27272a, // Gunmetal steel receiver
+        metalness: 0.9,
+        roughness: 0.25,
+      });
+      const steelBarrelMat = new THREE.MeshStandardMaterial({
+        color: 0x18181b, // Blued steel twin barrels
+        metalness: 0.95,
+        roughness: 0.18,
+      });
+      const brassAccentMat = new THREE.MeshStandardMaterial({
+        color: 0xd97706, // Polished brass accents
+        metalness: 0.9,
+        roughness: 0.3,
+      });
 
-    const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.022, 0.022, 0.45, 8),
-      darkGunMat
-    );
-    barrel.rotateX(Math.PI / 2);
-    barrel.position.set(0, 0.03, -0.48);
-    group.add(barrel);
+      // Wooden Stock & Buttplate
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.11, 0.36), stockMat);
+      stock.position.set(0, -0.04, 0.18);
+      stock.rotation.x = -0.12;
+      group.add(stock);
 
-    // Pump grip
-    const pump = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.032, 0.032, 0.16, 8),
-      new THREE.MeshStandardMaterial({ color: 0x3f3f46, roughness: 0.9 })
-    );
-    pump.rotateX(Math.PI / 2);
-    pump.position.set(0, -0.01, -0.28);
-    group.add(pump);
+      const buttPlate = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.12, 0.02), receiverMat);
+      buttPlate.position.set(0, -0.06, 0.35);
+      buttPlate.rotation.x = -0.12;
+      group.add(buttPlate);
 
-    group.scale.set(1.05, 1.05, 1.05);
+      // Steel Break-Action Receiver / Hinge Block
+      const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.09, 0.18), receiverMat);
+      receiver.position.set(0, 0.01, -0.04);
+      group.add(receiver);
+
+      // Break-Action Hinge Pin (Gold/Brass screw)
+      const hingePin = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.07, 8), brassAccentMat);
+      hingePin.rotation.z = Math.PI / 2;
+      hingePin.position.set(0, -0.02, -0.1);
+      group.add(hingePin);
+
+      // Top Break-Action Opening Lever
+      const topLever = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.02, 0.06), brassAccentMat);
+      topLever.position.set(0.01, 0.06, 0.02);
+      topLever.rotation.y = 0.15;
+      group.add(topLever);
+
+      // Wooden Fore-End under barrels
+      const foreEnd = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.045, 0.22), stockMat);
+      foreEnd.position.set(0, -0.02, -0.22);
+      group.add(foreEnd);
+
+      // Dual Twin Barrels (Side-by-Side cannon!)
+      // Left Barrel
+      const barrelLeft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.016, 0.016, 0.52, 10),
+        steelBarrelMat
+      );
+      barrelLeft.rotateX(Math.PI / 2);
+      barrelLeft.position.set(-0.018, 0.02, -0.38);
+      group.add(barrelLeft);
+
+      // Right Barrel
+      const barrelRight = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.016, 0.016, 0.52, 10),
+        steelBarrelMat
+      );
+      barrelRight.rotateX(Math.PI / 2);
+      barrelRight.position.set(0.018, 0.02, -0.38);
+      group.add(barrelRight);
+
+      // Center Ventilated Connecting Rib
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.014, 0.5), steelBarrelMat);
+      rib.position.set(0, 0.035, -0.38);
+      group.add(rib);
+
+      // Front Brass Sight Bead
+      const bead = new THREE.Mesh(new THREE.SphereGeometry(0.006, 8, 8), brassAccentMat);
+      bead.position.set(0, 0.044, -0.63);
+      group.add(bead);
+
+      // Twin Trigger Guard & Triggers
+      const triggerGuard = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.005, 6, 12, Math.PI), receiverMat);
+      triggerGuard.rotation.y = Math.PI / 2;
+      triggerGuard.rotation.z = Math.PI;
+      triggerGuard.position.set(0, -0.04, 0.03);
+      group.add(triggerGuard);
+
+      group.scale.set(1.15, 1.15, 1.15);
+    } else {
+      // Pump Shotgun (SPAS-12)
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.11, 0.65), darkGunMat);
+      group.add(body);
+
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.022, 0.022, 0.45, 8),
+        darkGunMat
+      );
+      barrel.rotateX(Math.PI / 2);
+      barrel.position.set(0, 0.03, -0.48);
+      group.add(barrel);
+
+      // Pump grip
+      const pump = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.032, 0.032, 0.16, 8),
+        new THREE.MeshStandardMaterial({ color: 0x3f3f46, roughness: 0.9 })
+      );
+      pump.rotateX(Math.PI / 2);
+      pump.position.set(0, -0.01, -0.28);
+      group.add(pump);
+
+      group.scale.set(1.05, 1.05, 1.05);
+    }
   } else if (type === 'sniper') {
     // Bolt-Action Sniper Rifle
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.75), darkGunMat);

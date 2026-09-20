@@ -50,18 +50,10 @@ const DEFAULT_PROFILE: PlayerProfile = {
   unlockedPickaxes: ['pickaxe_default'],
   unlockedGliders: ['glider_default'],
   unlockedWeapons: [
-    'ar_scar',
-    'shotgun_pump_epic',
-    'sniper_bolt_legendary',
-    'smg_p90_epic',
     'mini_shields',
     'medkit',
   ],
-  weaponTiers: {
-    ar_scar: 1,
-    shotgun_pump_epic: 1,
-    sniper_bolt_legendary: 1,
-  },
+  weaponTiers: {},
   armoryPerks: {
     damageBoost: 0,
     reloadBoost: 0,
@@ -71,9 +63,9 @@ const DEFAULT_PROFILE: PlayerProfile = {
     siphonShield: false,
   },
   loadout: {
-    slot1: 'ar_scar',
-    slot2: 'shotgun_pump_epic',
-    slot3: 'sniper_bolt_legendary',
+    slot1: '',
+    slot2: '',
+    slot3: '',
     slot4: 'mini_shields',
     slot5: 'medkit',
   },
@@ -139,13 +131,13 @@ export default function App() {
   const [metal, setMetal] = useState<number>(80);
   const [inventory, setInventory] = useState<(FortniteWeapon | null)[]>([
     { ...DEFAULT_PICKAXE },
-    { ...WEAPON_REGISTRY.ar_scar },
-    { ...WEAPON_REGISTRY.shotgun_pump_epic },
-    { ...WEAPON_REGISTRY.sniper_bolt_legendary },
+    null,
+    null,
+    null,
     { ...WEAPON_REGISTRY.mini_shields },
     { ...WEAPON_REGISTRY.medkit },
   ]);
-  const [activeSlot, setActiveSlot] = useState<number>(1);
+  const [activeSlot, setActiveSlot] = useState<number>(0);
   const [playersLeft, setPlayersLeft] = useState<number>(25);
   const [eliminations, setEliminations] = useState<number>(0);
   const [isFirstPerson, setIsFirstPerson] = useState<boolean>(true);
@@ -171,6 +163,8 @@ export default function App() {
   const [nearSupplyPrompt, setNearSupplyPrompt] = useState<string | null>(null);
   const [arena1v1State, setArena1v1State] = useState<Arena1v1State | null>(null);
   const [duelState, setDuelState] = useState<BattleRoyaleDuelState | null>(null);
+  const [networkPing, setNetworkPing] = useState<number>(24);
+  const [isNetworkConnected, setIsNetworkConnected] = useState<boolean>(true);
 
   // Skydiving & Touchdown state
   const [isSkydiving, setIsSkydiving] = useState<boolean>(true);
@@ -197,6 +191,24 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('fortnite_player_profile', JSON.stringify(profile));
   }, [profile]);
+
+  // Connect to room if provided via URL (e.g. ?room=ROYALE-1234 or ?join=1234)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const targetRoom = params.get('room') || params.get('join');
+      if (targetRoom) {
+        multiplayerClient.connectWithCode(targetRoom, {
+          name: profile.name,
+          skinId: profile.selectedSkin,
+          level: profile.level,
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }, [profile.name, profile.selectedSkin, profile.level]);
 
   // Pointer lock change listener & Escape menu shortcut
   useEffect(() => {
@@ -413,8 +425,20 @@ export default function App() {
   // Clean up engine on unmount & listen for squad match start
   useEffect(() => {
     multiplayerClient.setHandlers({
-      onMatchStart: () => {
+      onMatchStart: (_seed, _roomCode, mode, map) => {
+        if (mode && (mode === 'battle_royale' || mode === 'first_person_royale' || mode === '1v1_build_fight')) {
+          setSelectedMode(mode as GameMode);
+        }
+        if (map && (map === 'island_2v2' || map === 'tilted_skyscrapers' || map === 'pleasant_valley')) {
+          setSelectedMap(map as BattlegroundMap);
+        }
         handleStartMatch();
+      },
+      onPingUpdate: (ms) => {
+        setNetworkPing(ms);
+      },
+      onConnectionChange: (conn) => {
+        setIsNetworkConnected(conn);
       },
     });
 
@@ -540,6 +564,8 @@ export default function App() {
           touchdownBanner={touchdownBanner}
           partyMembers={multiplayerClient.partyState.members}
           partyCode={multiplayerClient.partyState.code}
+          networkPing={networkPing}
+          isNetworkConnected={isNetworkConnected}
           scopeTargetData={scopeTargetData}
           activeVehicle={activeVehicle}
           nearVehiclePrompt={nearVehiclePrompt}

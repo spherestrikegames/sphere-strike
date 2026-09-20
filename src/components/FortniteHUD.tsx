@@ -41,6 +41,7 @@ import {
   Home,
   RotateCcw,
   Trophy,
+  Wifi,
 } from 'lucide-react';
 
 interface FortniteHUDProps {
@@ -82,6 +83,8 @@ interface FortniteHUDProps {
   reticleColor?: string;
   gameMode?: GameMode;
   selectedSkin?: string;
+  networkPing?: number;
+  isNetworkConnected?: boolean;
   arena1v1State?: Arena1v1State | null;
   duelState?: BattleRoyaleDuelState | null;
   botDifficulty?: 'casual' | 'normal' | 'pro' | 'god';
@@ -132,6 +135,8 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
   reticleColor = '#ffffff',
   gameMode,
   selectedSkin = 'jonesy',
+  networkPing,
+  isNetworkConnected = true,
   arena1v1State,
   duelState,
   botDifficulty = 'pro',
@@ -599,6 +604,15 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
 
           {/* Action Buttons: Perspective, Settings & Main Screen Lobby */}
           <div className="flex items-center gap-2">
+            {networkPing !== undefined && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-black/60 border border-white/10 text-[11px] font-mono font-bold shadow-md">
+                <Wifi className={`w-3.5 h-3.5 ${networkPing < 60 ? 'text-emerald-400' : networkPing < 120 ? 'text-amber-400' : 'text-rose-400'}`} />
+                <span className={networkPing < 60 ? 'text-emerald-300' : networkPing < 120 ? 'text-amber-300' : 'text-rose-300'}>
+                  {networkPing}ms
+                </span>
+              </div>
+            )}
+
             {showFps && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-black/60 border border-white/10 text-emerald-400 text-[11px] font-mono font-bold shadow-md">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -873,6 +887,169 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               <span>HEAVY BOLT-ACTION 8X • ZERO BULLET SPREAD</span>
             </div>
           </div>
+        ) : currentWeapon?.id === 'shotgun_double_barrel' ? (
+          /* Custom Double-Barrel Break-Action Reticle */
+          <div className="relative flex flex-col items-center justify-center">
+            {/* Dual Chamber Barrel Reticle */}
+            <div className="relative w-12 h-12 flex items-center justify-center pointer-events-none">
+              {/* Wide Shotgun Pellets Outer Brackets */}
+              <div
+                className="absolute -left-3.5 w-3 h-7 border-l-2 border-t-2 border-b-2 rounded-l-md transition-colors duration-150"
+                style={{
+                  borderColor: currentWeapon.currentAmmo === 0 ? '#ef4444' : reticleColor,
+                  boxShadow: currentWeapon.currentAmmo === 0 ? '0 0 10px rgba(239,68,68,0.6)' : '0 0 8px rgba(245,158,11,0.5)',
+                }}
+              />
+              <div
+                className="absolute -right-3.5 w-3 h-7 border-r-2 border-t-2 border-b-2 rounded-r-md transition-colors duration-150"
+                style={{
+                  borderColor: currentWeapon.currentAmmo === 0 ? '#ef4444' : reticleColor,
+                  boxShadow: currentWeapon.currentAmmo === 0 ? '0 0 10px rgba(239,68,68,0.6)' : '0 0 8px rgba(245,158,11,0.5)',
+                }}
+              />
+
+              {/* Twin Barrels Center Reticle Dots */}
+              <div className="flex items-center gap-2">
+                <div
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    currentWeapon.currentAmmo >= 1
+                      ? 'bg-amber-400 shadow-[0_0_8px_#f59e0b]'
+                      : 'bg-rose-950/80 border border-rose-500/80'
+                  }`}
+                />
+                <div
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    currentWeapon.currentAmmo >= 2
+                      ? 'bg-amber-400 shadow-[0_0_8px_#f59e0b]'
+                      : 'bg-rose-950/80 border border-rose-500/80'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Status Indicator beneath reticle */}
+            {currentWeapon.currentAmmo === 0 ? (
+              <div className="absolute -bottom-8 whitespace-nowrap px-3 py-1 rounded-full bg-rose-950/95 border border-rose-500 text-[10px] font-mono font-black text-rose-200 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.6)] flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                <span>⚠️ DEFENSELESS: SLIPPING IN 2 SHELLS...</span>
+              </div>
+            ) : (
+              <div className="absolute -bottom-7 whitespace-nowrap px-2.5 py-0.5 rounded-full bg-black/80 border border-amber-500/40 text-[9px] font-mono font-bold text-amber-300 flex items-center gap-1.5 backdrop-blur-md">
+                <span>{currentWeapon.currentAmmo === 2 ? '🔴 🔴 2 SHELLS PRIMED' : '🔴 ⚪ 1 SHELL LEFT'}</span>
+              </div>
+            )}
+
+            {/* Hitmarker (X) */}
+            {hitmarker.active && (
+              <div
+                className={`absolute w-6 h-6 flex items-center justify-center font-black text-2xl animate-in zoom-in-150 duration-75 pointer-events-none ${
+                  hitmarker.isHeadshot
+                    ? 'text-amber-300 drop-shadow-[0_0_12px_#f59e0b]'
+                    : hitmarker.isShield
+                    ? 'text-cyan-400 drop-shadow-[0_0_10px_#38bdf8]'
+                    : 'text-white drop-shadow-[0_0_8px_#fff]'
+                }`}
+              >
+                ✕
+              </div>
+            )}
+          </div>
+        ) : currentWeapon?.id === 'rifle_burst' ? (
+          /* Custom 3-Round Burst Marksman Reticle */
+          <div className="relative flex flex-col items-center justify-center pointer-events-none">
+            {/* Holographic Marksman Brackets & Triple-Burst Indicators */}
+            <div className="relative w-12 h-12 flex items-center justify-center">
+              {/* Left bracket */}
+              <div
+                className="absolute -left-3 w-2 h-5 border-l-2 border-t border-b rounded-l-sm transition-colors duration-150"
+                style={{
+                  borderColor: isAiming ? '#38bdf8' : reticleColor,
+                  boxShadow: '0 0 8px rgba(56,189,248,0.5)',
+                }}
+              />
+              {/* Right bracket */}
+              <div
+                className="absolute -right-3 w-2 h-5 border-r-2 border-t border-b rounded-r-sm transition-colors duration-150"
+                style={{
+                  borderColor: isAiming ? '#38bdf8' : reticleColor,
+                  boxShadow: '0 0 8px rgba(56,189,248,0.5)',
+                }}
+              />
+
+              {/* Upward Recoil Rise Chevron Indicator */}
+              <div className="absolute -top-3.5 flex flex-col items-center opacity-80">
+                <span className="text-[8px] font-mono text-cyan-400 font-bold leading-none">▲</span>
+                <span className="text-[6px] font-mono text-cyan-300/70 tracking-tighter leading-none">CLIMB</span>
+              </div>
+
+              {/* Triple Burst Round Pips */}
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={`w-1.5 h-1.5 rounded-full transition-all ${
+                    currentWeapon.currentAmmo >= 1
+                      ? 'bg-cyan-400 shadow-[0_0_6px_#38bdf8]'
+                      : 'bg-slate-800 border border-slate-600'
+                  }`}
+                />
+                <div
+                  className={`w-1.5 h-1.5 rounded-full transition-all ${
+                    currentWeapon.currentAmmo >= 2
+                      ? 'bg-cyan-400 shadow-[0_0_6px_#38bdf8]'
+                      : 'bg-slate-800 border border-slate-600'
+                  }`}
+                />
+                <div
+                  className={`w-1.5 h-1.5 rounded-full transition-all ${
+                    currentWeapon.currentAmmo >= 3
+                      ? 'bg-cyan-300 shadow-[0_0_8px_#38bdf8]'
+                      : 'bg-slate-800 border border-slate-600'
+                  }`}
+                />
+              </div>
+
+              {/* Center Micro Dot */}
+              <div
+                className={`absolute w-1 h-1 rounded-full ${
+                  scopeTargetData?.isBot
+                    ? 'bg-rose-500 shadow-[0_0_8px_#ef4444]'
+                    : 'bg-cyan-300 shadow-[0_0_6px_#38bdf8]'
+                }`}
+              />
+            </div>
+
+            {/* Status & Bursts Left Banner beneath reticle */}
+            {currentWeapon.currentAmmo === 0 ? (
+              <div className="absolute -bottom-8 whitespace-nowrap px-2.5 py-0.5 rounded-full bg-rose-950/95 border border-rose-500 text-[9px] font-mono font-black text-rose-200 animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.5)] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                <span>EMPTY: PRESS R TO RELOAD</span>
+              </div>
+            ) : (
+              <div className="absolute -bottom-7 whitespace-nowrap px-2 py-0.5 rounded-full bg-black/80 border border-cyan-500/40 text-[8.5px] font-mono font-bold text-cyan-300 flex items-center gap-1 backdrop-blur-md">
+                <span>🎯 3-ROUND BURST • {Math.ceil(currentWeapon.currentAmmo / 3)} REMAINING</span>
+                {scopeTargetData && (
+                  <>
+                    <span className="text-slate-500">|</span>
+                    <span className="text-amber-300">{scopeTargetData.distance}m</span>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Hitmarker (X) */}
+            {hitmarker.active && (
+              <div
+                className={`absolute w-6 h-6 flex items-center justify-center font-black text-2xl animate-in zoom-in-150 duration-75 pointer-events-none ${
+                  hitmarker.isHeadshot
+                    ? 'text-amber-300 drop-shadow-[0_0_12px_#f59e0b]'
+                    : hitmarker.isShield
+                    ? 'text-cyan-400 drop-shadow-[0_0_10px_#38bdf8]'
+                    : 'text-white drop-shadow-[0_0_8px_#fff]'
+                }`}
+              >
+                ✕
+              </div>
+            )}
+          </div>
         ) : (
           <div className="relative w-8 h-8 flex items-center justify-center">
             {/* Standard ADS precision crosshair */}
@@ -1061,9 +1238,27 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
 
                 {wep && wep.type !== 'pickaxe' && (
                   <span className="text-[9px] font-mono font-black text-white bg-black/60 px-1 rounded-md">
-                    {wep.type === 'shield' || wep.type === 'heal'
-                      ? `x${wep.currentAmmo}`
-                      : `${wep.currentAmmo} / ∞`}
+                    {wep.id === 'shotgun_double_barrel' ? (
+                      wep.currentAmmo === 2 ? (
+                        <span className="text-amber-400">🔴🔴</span>
+                      ) : wep.currentAmmo === 1 ? (
+                        <span className="text-amber-300">🔴⚪</span>
+                      ) : (
+                        <span className="text-rose-400 text-[8px] animate-pulse">RELOAD</span>
+                      )
+                    ) : wep.id === 'rifle_burst' ? (
+                      wep.currentAmmo === 0 ? (
+                        <span className="text-rose-400 text-[8px] animate-pulse">RELOAD</span>
+                      ) : (
+                        <span className="text-cyan-300">
+                          {Math.ceil(wep.currentAmmo / 3)}B ({wep.currentAmmo})
+                        </span>
+                      )
+                    ) : wep.type === 'shield' || wep.type === 'heal' ? (
+                      `x${wep.currentAmmo}`
+                    ) : (
+                      `${wep.currentAmmo} / ∞`
+                    )}
                   </span>
                 )}
               </button>

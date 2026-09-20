@@ -10,6 +10,9 @@ import { addDetailedDrivableVehicle } from './fortniteWorldVehiclesProps';
 // -------------------------------------------------------------
 // SUBTLE NATURAL GRASS TUFTS (REDUCED DENSITY, ZERO ROADS, ZERO LAG)
 // -------------------------------------------------------------
+const _sharedPicketGeo = new THREE.BoxGeometry(0.12, 1.0, 0.12);
+const _picketDummy = new THREE.Object3D();
+
 export function populateLushGrass(scene: THREE.Scene) {
   const grassMat = new THREE.MeshStandardMaterial({
     color: 0x4ade80,
@@ -400,12 +403,20 @@ export function addDetailedSuburbanHome(
   garageDoor.position.set(8.5, 1.6, 4.3);
   house.add(garageDoor);
 
-  // Decorative White Picket Fence
-  for (let fx = -8; fx <= 12; fx += 1.4) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 0.12), fenceMat);
-    post.position.set(fx, 0.5, 9.5);
-    house.add(post);
+  // Decorative White Picket Fence (Batched via InstancedMesh)
+  const picketCount = 15;
+  const instancedPickets = new THREE.InstancedMesh(_sharedPicketGeo, fenceMat, picketCount);
+  let pIdx = 0;
+  for (let fx = -8; fx <= 12 && pIdx < picketCount; fx += 1.4) {
+    _picketDummy.position.set(fx, 0.5, 9.5);
+    _picketDummy.rotation.set(0, 0, 0);
+    _picketDummy.scale.set(1, 1, 1);
+    _picketDummy.updateMatrix();
+    instancedPickets.setMatrixAt(pIdx++, _picketDummy.matrix);
   }
+  instancedPickets.instanceMatrix.needsUpdate = true;
+  house.add(instancedPickets);
+
   const fenceRail = new THREE.Mesh(new THREE.BoxGeometry(20, 0.1, 0.08), fenceMat);
   fenceRail.position.set(2, 0.6, 9.5);
   house.add(fenceRail);

@@ -36,6 +36,22 @@ interface PartyRoom {
 
 const rooms = new Map<string, PartyRoom>();
 
+function ensureGlobalRoom() {
+  if (!rooms.has('ROYALE-GLOBAL')) {
+    rooms.set('ROYALE-GLOBAL', {
+      code: 'ROYALE-GLOBAL',
+      hostId: 'global_host',
+      createdAt: Date.now(),
+      players: new Map(),
+      gameState: 'lobby',
+      seed: 777123,
+      events: [],
+      eventSeq: 0,
+    });
+  }
+}
+ensureGlobalRoom();
+
 function getPartyPayload(room: PartyRoom) {
   return {
     type: 'party:update',
@@ -59,7 +75,11 @@ function broadcastToRoom(room: PartyRoom, message: object, excludeWs?: WebSocket
   const data = JSON.stringify(message);
   room.players.forEach((player) => {
     if (player.ws && player.ws !== excludeWs && player.ws.readyState === WebSocket.OPEN) {
-      player.ws.send(data);
+      try {
+        player.ws.send(data);
+      } catch (err) {
+        console.warn('Failed to send ws payload:', err);
+      }
     }
   });
 }
@@ -75,22 +95,23 @@ function publishRoomEvent(room: PartyRoom, type: string, payload: any, senderId?
   };
 
   room.events.push(evt);
-  if (room.events.length > 120) {
+  if (room.events.length > 150) {
     room.events.shift();
   }
 
-  broadcastToRoom(room, { type, eventId, senderId, ...payload }, excludeWs);
+  broadcastToRoom(room, { type, eventId, senderId, playerId: senderId, ...payload }, excludeWs);
   return evt;
 }
 
 function cleanupStalePlayers() {
   const now = Date.now();
+  ensureGlobalRoom();
   for (const [code, room] of rooms.entries()) {
     for (const [playerId, player] of room.players.entries()) {
       const isWsOpen = player.ws && player.ws.readyState === WebSocket.OPEN;
       if (!isWsOpen && now - player.lastPing > 25000) {
         room.players.delete(playerId);
-        publishRoomEvent(room, 'player:leave', { playerId });
+        publishRoomEvent(room, 'player:leave', { playerId, senderId: playerId });
         if (room.hostId === playerId && room.players.size > 0) {
           const nextHost = room.players.keys().next().value;
           if (nextHost) room.hostId = nextHost;
@@ -98,7 +119,7 @@ function cleanupStalePlayers() {
         publishRoomEvent(room, 'party:update', getPartyPayload(room));
       }
     }
-    if (room.players.size === 0 && now - room.createdAt > 300000) {
+    if (code !== 'ROYALE-GLOBAL' && room.players.size === 0 && now - room.createdAt > 300000) {
       rooms.delete(code);
     }
   }
@@ -115,17 +136,21 @@ async function startServer() {
 
   // API Routes
   app.get('/api/health', (req, res) => {
+    ensureGlobalRoom();
     res.json({ status: 'ok', partiesCount: rooms.size, timestamp: Date.now() });
   });
 
   app.get('/api/parties/public', (req, res) => {
+    ensureGlobalRoom();
     const list = Array.from(rooms.values())
       .filter((r) => r.players.size < 16)
       .map((r) => ({
         code: r.code,
         playerCount: r.players.size,
         gameState: r.gameState,
-      }));
+        isGlobal: r.code === 'ROYALE-GLOBAL',
+      }))
+      .sort((a, b) => (b.isGlobal ? 1 : 0) - (a.isGlobal ? 1 : 0) || b.playerCount - a.playerCount);
     res.json({ rooms: list });
   });
 
@@ -309,6 +334,16 @@ async function startServer() {
   // WebSocket Server setup
   const wss = new WebSocketServer({ server, path: '/ws' });
 
+  const wsKeepalive = setInterval(() => {
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.ping();
+        } catch {}
+      }
+    });
+  }, 12000);
+
   wss.on('connection', (ws: WebSocket) => {
     let currentRoomCode: string | null = null;
     let currentPlayerId: string | null = null;
@@ -318,6 +353,11 @@ async function startServer() {
         const msg = JSON.parse(raw.toString());
 
         switch (msg.type) {
+          case 'ping': {
+            ws.send(JSON.stringify({ type: 'pong', time: msg.time || Date.now() }));
+            break;
+          }
+
           case 'party:connect':
           case 'party:join':
           case 'party:create': {
@@ -412,6 +452,8 @@ async function startServer() {
             publishRoomEvent(room, 'match:start', {
               seed: room.seed,
               roomCode: room.code,
+              mode: msg.mode,
+              map: msg.map,
             });
             break;
           }
@@ -443,6 +485,7 @@ async function startServer() {
               {
                 type: 'player:sync',
                 playerId: currentPlayerId,
+                senderId: currentPlayerId,
                 data: msg.data,
               },
               ws
@@ -488,8 +531,8 @@ async function startServer() {
         const room = rooms.get(currentRoomCode);
         if (room) {
           room.players.delete(currentPlayerId);
-          publishRoomEvent(room, 'player:leave', { playerId: currentPlayerId });
-          if (room.players.size === 0) {
+          publishRoomEvent(room, 'player:leave', { playerId: currentPlayerId, senderId: currentPlayerId });
+          if (room.players.size === 0 && currentRoomCode !== 'ROYALE-GLOBAL') {
             rooms.delete(currentRoomCode);
           } else {
             if (room.hostId === currentPlayerId) {

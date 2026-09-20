@@ -6,6 +6,7 @@ import {
   WEAPON_TIER_CONFIG,
   ARMORY_PERKS_CONFIG,
   WEAPON_REGISTRY,
+  DEFAULT_PICKAXE,
   FORTNITE_SKINS,
   FortniteSkin,
   getWeaponEffectiveStats,
@@ -293,20 +294,13 @@ export const FortniteShop: React.FC<FortniteShopProps> = ({
   const [activeTab, setActiveTab] = useState<'weapons' | 'cosmetics' | 'tiers' | 'perks' | 'loadout' | 'rewards'>('weapons');
   const [cosmeticCategoryFilter, setCosmeticCategoryFilter] = useState<'all' | 'skin' | 'pickaxe' | 'glider' | 'tokens'>('all');
   const [weaponCategoryFilter, setWeaponCategoryFilter] = useState<'all' | 'ar' | 'shotgun' | 'smg' | 'sniper' | 'heavy' | 'exotic'>('all');
-  const [selectedWeaponId, setSelectedWeaponId] = useState<string>(SHOP_WEAPONS_CATALOG[2]?.id || 'ar_scar');
+  const [selectedWeaponId, setSelectedWeaponId] = useState<string>(SHOP_WEAPONS_CATALOG[0]?.id || '');
   const [selectedCosmeticId, setSelectedCosmeticId] = useState<string>('peely');
   const [claimedRewardMessage, setClaimedRewardMessage] = useState<string | null>(null);
 
   // Safe Fallbacks for profile structures
   const unlockedWeapons = useMemo(() => {
     return profile.unlockedWeapons || [
-      'ar_common',
-      'ar_rare',
-      'ar_scar',
-      'shotgun_pump_uncommon',
-      'shotgun_pump_epic',
-      'smg_suppressed_rare',
-      'sniper_bolt_legendary',
       'mini_shields',
       'medkit',
     ];
@@ -344,9 +338,9 @@ export const FortniteShop: React.FC<FortniteShopProps> = ({
   const loadout = useMemo(() => {
     return (
       profile.loadout || {
-        slot1: 'ar_scar',
-        slot2: 'shotgun_pump_epic',
-        slot3: 'sniper_bolt_legendary',
+        slot1: '',
+        slot2: '',
+        slot3: '',
         slot4: 'mini_shields',
         slot5: 'medkit',
       }
@@ -362,24 +356,30 @@ export const FortniteShop: React.FC<FortniteShopProps> = ({
   });
 
   const selectedShopItem =
-    SHOP_WEAPONS_CATALOG.find((w) => w.id === selectedWeaponId) || SHOP_WEAPONS_CATALOG[0];
+    SHOP_WEAPONS_CATALOG.find((w) => w.id === selectedWeaponId) || SHOP_WEAPONS_CATALOG[0] || null;
   const selectedBaseWeapon =
-    WEAPON_REGISTRY[selectedWeaponId] || WEAPON_REGISTRY.ar_scar;
+    (selectedWeaponId ? WEAPON_REGISTRY[selectedWeaponId] : null) || DEFAULT_PICKAXE;
 
-  const currentTier = weaponTiers[selectedWeaponId] || 1;
+  const currentTier = selectedWeaponId ? (weaponTiers[selectedWeaponId] || 1) : 1;
   const nextTier = currentTier < 4 ? currentTier + 1 : null;
   const nextTierConfig = nextTier ? WEAPON_TIER_CONFIG[nextTier] : null;
 
   // Effective stats calculation
-  const currentStats = getWeaponEffectiveStats(selectedBaseWeapon, currentTier, armoryPerks);
-  const nextTierStats = nextTier
+  const currentStats = selectedBaseWeapon ? getWeaponEffectiveStats(selectedBaseWeapon, currentTier, armoryPerks) : null;
+  const nextTierStats = nextTier && selectedBaseWeapon
     ? getWeaponEffectiveStats(selectedBaseWeapon, nextTier, armoryPerks)
     : null;
 
   // Sound Test Fire
   const handleTestFireAudio = (wItem: ShopWeaponItem) => {
     const baseW = WEAPON_REGISTRY[wItem.id] || selectedBaseWeapon;
-    if (baseW.type === 'shotgun') {
+    if (wItem.id === 'rifle_burst' || baseW.id === 'rifle_burst') {
+      fortniteAudio.playGunshotBurstRifle(1);
+      setTimeout(() => fortniteAudio.playGunshotBurstRifle(2), 75);
+      setTimeout(() => fortniteAudio.playGunshotBurstRifle(3), 150);
+    } else if (baseW.id === 'shotgun_double_barrel') {
+      fortniteAudio.playGunshotDoubleBarrel();
+    } else if (baseW.type === 'shotgun') {
       fortniteAudio.playGunshotPump();
     } else if (baseW.type === 'sniper') {
       fortniteAudio.playGunshotSniper();
@@ -746,8 +746,19 @@ export const FortniteShop: React.FC<FortniteShopProps> = ({
               </div>
 
               {/* Weapons Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredWeapons.map((item) => {
+              {filteredWeapons.length === 0 ? (
+                <div className="py-20 px-8 text-center rounded-3xl bg-black/40 border border-white/10 flex flex-col items-center justify-center gap-3">
+                  <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-3xl">
+                    ⚡
+                  </div>
+                  <h3 className="font-display font-black text-xl text-white">All Old Guns Removed</h3>
+                  <p className="text-sm text-slate-400 max-w-md">
+                    The armory has been cleared and is ready for your new custom gun prompts! Tell me what new weapons you would like to forge.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredWeapons.map((item) => {
                   const baseW = WEAPON_REGISTRY[item.id];
                   const isUnlocked = unlockedWeapons.includes(item.id) || item.costTokens === 0;
                   const tier = weaponTiers[item.id] || 1;
@@ -942,6 +953,7 @@ export const FortniteShop: React.FC<FortniteShopProps> = ({
                   );
                 })}
               </div>
+            )}
             </div>
           )}
 
@@ -1571,33 +1583,33 @@ export const FortniteShop: React.FC<FortniteShopProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 {[
-                  { slotKey: 'slot1', label: 'PRIMARY RIFLE', icon: '🔫' },
-                  { slotKey: 'slot2', label: 'SHOTGUN', icon: '💥' },
-                  { slotKey: 'slot3', label: 'SNIPER / SMG', icon: '🎯' },
+                  { slotKey: 'slot1', label: 'PRIMARY WEAPON', icon: '🔫' },
+                  { slotKey: 'slot2', label: 'SECONDARY WEAPON', icon: '💥' },
+                  { slotKey: 'slot3', label: 'SPECIAL / SNIPER', icon: '🎯' },
                   { slotKey: 'slot4', label: 'SHIELD ITEM', icon: '🧪' },
                   { slotKey: 'slot5', label: 'HEAL ITEM', icon: '🩹' },
                 ].map(({ slotKey, label, icon }) => {
                   const currentGunId = (loadout as any)[slotKey];
-                  const currentGun = WEAPON_REGISTRY[currentGunId] || WEAPON_REGISTRY.ar_scar;
-                  const tier = weaponTiers[currentGunId] || 1;
+                  const currentGun = currentGunId ? WEAPON_REGISTRY[currentGunId] : null;
+                  const tier = currentGunId ? (weaponTiers[currentGunId] || 1) : 1;
 
                   return (
                     <div
                       key={slotKey}
-                      className="p-3.5 rounded-2xl bg-black/50 border border-white/10 flex flex-col justify-between"
+                      className="p-3.5 rounded-2xl bg-black/50 border border-white/10 flex flex-col justify-between min-h-[145px]"
                     >
                       <div>
                         <div className="text-[10px] font-black text-amber-400 tracking-wider mb-2 uppercase">
                           {label}
                         </div>
                         <div className="flex items-center gap-2 mb-3">
-                          <span className="text-2xl">{currentGun.icon || icon}</span>
+                          <span className="text-2xl">{currentGun?.icon || icon}</span>
                           <div>
                             <h4 className="font-display font-black text-xs text-white line-clamp-1">
-                              {currentGun.name}
+                              {currentGun ? currentGun.name : 'Empty Slot'}
                             </h4>
                             <span className="text-[9px] text-amber-300 font-mono">
-                              TIER {tier} • {currentGun.rarity}
+                              {currentGun ? `TIER ${tier} • ${currentGun.rarity}` : 'Awaiting custom weapons'}
                             </span>
                           </div>
                         </div>
@@ -1605,10 +1617,11 @@ export const FortniteShop: React.FC<FortniteShopProps> = ({
 
                       {/* Dropdown selector of available unlocked guns */}
                       <select
-                        value={currentGunId}
+                        value={currentGunId || ''}
                         onChange={(e) => handleEquipWeapon(e.target.value, slotKey as any)}
                         className="w-full p-2 rounded-xl bg-slate-800 border border-white/10 text-xs font-bold text-white cursor-pointer"
                       >
+                        <option value="">-- Empty Slot --</option>
                         {SHOP_WEAPONS_CATALOG.filter(
                           (w) => unlockedWeapons.includes(w.id) || w.costTokens === 0
                         ).map((w) => (
@@ -1616,6 +1629,8 @@ export const FortniteShop: React.FC<FortniteShopProps> = ({
                             {w.name} ({w.rarity})
                           </option>
                         ))}
+                        {slotKey === 'slot4' && <option value="mini_shields">Mini Shield Potion</option>}
+                        {slotKey === 'slot5' && <option value="medkit">Medkit</option>}
                       </select>
                     </div>
                   );
@@ -1696,7 +1711,7 @@ export const FortniteShop: React.FC<FortniteShopProps> = ({
             <span>•</span>
             <span>👑 Active Skin: {activeCosmeticSkin.name}</span>
             <span>•</span>
-            <span>🎯 Primary Weapon: {WEAPON_REGISTRY[loadout.slot1]?.name || 'SCAR'}</span>
+            <span>🎯 Primary Weapon: {loadout.slot1 && WEAPON_REGISTRY[loadout.slot1]?.name ? WEAPON_REGISTRY[loadout.slot1].name : 'None'}</span>
           </div>
 
           <button

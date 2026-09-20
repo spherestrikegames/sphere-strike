@@ -20,6 +20,9 @@ class FortniteSoundSystem {
   private chestOsc: OscillatorNode | null = null;
   private chestGain: GainNode | null = null;
 
+  // Cached reusable noise buffers to eliminate per-shot allocations
+  private noiseBufferCache: Map<number, AudioBuffer> = new Map();
+
   constructor() {
     // Lazy AudioContext initialization on first user interaction
   }
@@ -621,6 +624,46 @@ class FortniteSoundSystem {
     osc.stop(t + 0.14);
   }
 
+  public playGunshotBurstRifle(roundIndex: number = 1) {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx || !this.masterGainNode) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const noise = this.createNoiseBuffer(0.08);
+    const noiseNode = this.ctx.createBufferSource();
+    noiseNode.buffer = noise;
+
+    // Crisp high-velocity marksman crack with escalating tone across the 3 rounds
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    const baseFreq = roundIndex === 1 ? 3800 : roundIndex === 2 ? 4200 : 4700;
+    filter.frequency.setValueAtTime(baseFreq, t);
+    filter.Q.setValueAtTime(3.5, t);
+    filter.frequency.exponentialRampToValueAtTime(700, t + 0.075);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(roundIndex === 3 ? 0.75 : 0.65, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+
+    // Punchy acoustic transient: higher pitch snap for each crisp round
+    osc.type = 'sawtooth';
+    const startFreq = roundIndex === 1 ? 290 : roundIndex === 2 ? 340 : 420;
+    const endFreq = roundIndex === 3 ? 95 : 75;
+    osc.frequency.setValueAtTime(startFreq, t);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, t + 0.065);
+
+    noiseNode.connect(filter);
+    filter.connect(gain);
+    osc.connect(gain);
+    gain.connect(this.masterGainNode);
+
+    noiseNode.start(t);
+    osc.start(t);
+    osc.stop(t + 0.08);
+  }
+
   public playGunshotShotgun() {
     if (this.isMuted) return;
     this.initCtx();
@@ -1078,6 +1121,163 @@ class FortniteSoundSystem {
       osc2.start(t2);
       osc2.stop(t2 + 0.14);
     }, 280);
+  }
+
+  public playGunshotDoubleBarrel() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx || !this.masterGainNode) return;
+
+    const t = this.ctx.currentTime;
+    // Heavy explosive twin-barrel blast noise
+    const noise = this.createNoiseBuffer(0.35);
+    const noiseNode = this.ctx.createBufferSource();
+    noiseNode.buffer = noise;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(3400, t);
+    filter.frequency.exponentialRampToValueAtTime(140, t + 0.32);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(1.0, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.35);
+
+    // Deep sub bass cannon rumble
+    const subOsc = this.ctx.createOscillator();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(190, t);
+    subOsc.frequency.exponentialRampToValueAtTime(24, t + 0.3);
+
+    const subGain = this.ctx.createGain();
+    subGain.gain.setValueAtTime(0.9, t);
+    subGain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+
+    noiseNode.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGainNode);
+
+    subOsc.connect(subGain);
+    subGain.connect(this.masterGainNode);
+
+    noiseNode.start(t);
+    subOsc.start(t);
+    subOsc.stop(t + 0.35);
+  }
+
+  public playDoubleBarrelReload() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx || !this.masterGainNode) return;
+
+    // 1. Break-Action Snap Open (Hinge crack & dual spent shells pop)
+    const t1 = this.ctx.currentTime;
+    const osc1 = this.ctx.createOscillator();
+    osc1.type = 'sawtooth';
+    osc1.frequency.setValueAtTime(420, t1);
+    osc1.frequency.exponentialRampToValueAtTime(860, t1 + 0.08);
+    const g1 = this.ctx.createGain();
+    g1.gain.setValueAtTime(0.35, t1);
+    g1.gain.exponentialRampToValueAtTime(0.01, t1 + 0.14);
+    osc1.connect(g1);
+    g1.connect(this.masterGainNode);
+    osc1.start(t1);
+    osc1.stop(t1 + 0.14);
+
+    // 2. First shell slipping into left chamber (~0.9s)
+    setTimeout(() => {
+      if (!this.ctx || !this.masterGainNode) return;
+      const t = this.ctx.currentTime;
+      const o = this.ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(620, t);
+      o.frequency.setValueAtTime(320, t + 0.07);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.4, t);
+      g.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+      o.connect(g);
+      g.connect(this.masterGainNode);
+      o.start(t);
+      o.stop(t + 0.12);
+    }, 900);
+
+    // 3. Second shell slipping into right chamber (~1.7s)
+    setTimeout(() => {
+      if (!this.ctx || !this.masterGainNode) return;
+      const t = this.ctx.currentTime;
+      const o = this.ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(740, t);
+      o.frequency.setValueAtTime(360, t + 0.07);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.45, t);
+      g.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+      o.connect(g);
+      g.connect(this.masterGainNode);
+      o.start(t);
+      o.stop(t + 0.12);
+    }, 1700);
+
+    // 4. Heavy Steel Hinge Snap Shut & Ready Lock (~2.5s)
+    setTimeout(() => {
+      if (!this.ctx || !this.masterGainNode) return;
+      const t = this.ctx.currentTime;
+      const o = this.ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(950, t);
+      o.frequency.exponentialRampToValueAtTime(220, t + 0.12);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.5, t);
+      g.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
+      o.connect(g);
+      g.connect(this.masterGainNode);
+      o.start(t);
+      o.stop(t + 0.18);
+    }, 2500);
+  }
+
+  public playPixelDisintegration() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx || !this.masterGainNode) return;
+
+    const t = this.ctx.currentTime;
+    // Cyber pixel arpeggio sweep + bitcrushed disintegration
+    const freqs = [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98, 2093.0];
+    freqs.forEach((f, idx) => {
+      if (!this.ctx || !this.masterGainNode) return;
+      const noteTime = t + idx * 0.035;
+      const osc = this.ctx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(f, noteTime);
+      osc.frequency.exponentialRampToValueAtTime(f * 1.5, noteTime + 0.08);
+
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.2, noteTime);
+      g.gain.exponentialRampToValueAtTime(0.005, noteTime + 0.1);
+
+      osc.connect(g);
+      g.connect(this.masterGainNode);
+      osc.start(noteTime);
+      osc.stop(noteTime + 0.1);
+    });
+
+    // Dissolve noise hiss
+    const noise = this.createNoiseBuffer(0.4);
+    const noiseNode = this.ctx.createBufferSource();
+    noiseNode.buffer = noise;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(2500, t);
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.3, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+    noiseNode.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGainNode);
+    noiseNode.start(t);
   }
 
   public playBulletCrack() {
@@ -1924,13 +2124,21 @@ class FortniteSoundSystem {
     if (!this.ctx) {
       this.initCtx();
     }
+    // Quantize duration into 0.02s precision buckets to maximize cache reuse
+    const bucket = Math.max(0.02, Math.round(duration * 50) / 50);
+    const cached = this.noiseBufferCache.get(bucket);
+    if (cached) {
+      return cached;
+    }
+
     const sampleRate = this.ctx ? this.ctx.sampleRate : 44100;
-    const bufferSize = sampleRate * duration;
+    const bufferSize = Math.max(1, Math.floor(sampleRate * bucket));
     const buffer = this.ctx!.createBuffer(1, bufferSize, sampleRate);
     const output = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
       output[i] = Math.random() * 2 - 1;
     }
+    this.noiseBufferCache.set(bucket, buffer);
     return buffer;
   }
 }

@@ -6,12 +6,23 @@ import { fortniteAudio } from '../utils/audio';
 import type { FortniteEngine } from './fortniteEngine';
 
 
+const _shotgunRaycaster = new THREE.Raycaster();
+const _centerRayOrigin = new THREE.Vector3();
+const _centerRayDir = new THREE.Vector3();
+const _centerRayEnd = new THREE.Vector3();
+const _sharedBox = new THREE.Box3();
+const _sharedIntersect = new THREE.Vector3();
+const _marchP = new THREE.Vector3();
+const _impactPos = new THREE.Vector3();
+const _muzzleOffset = new THREE.Vector3();
+const _muzzlePos = new THREE.Vector3();
+const _screenCenter = new THREE.Vector2(0, 0);
+
 export function performShotgunBlastImpl(engine: FortniteEngine, wep: FortniteWeapon) {
   const pelletCount = 10;
-  const rayOrigin = engine.camera.position.clone();
-  const forwardRaycaster = new THREE.Raycaster();
-  forwardRaycaster.setFromCamera(new THREE.Vector2(0, 0), engine.camera);
-  const centerRayDir = forwardRaycaster.ray.direction.clone();
+  _centerRayOrigin.copy(engine.camera.position);
+  _shotgunRaycaster.setFromCamera(_screenCenter, engine.camera);
+  _centerRayDir.copy(_shotgunRaycaster.ray.direction);
 
   // Strict 1-foot effective radius zone (~0.35m radius cylinder around center line)
   const effectiveRadius = 0.35;
@@ -22,39 +33,37 @@ export function performShotgunBlastImpl(engine: FortniteEngine, wep: FortniteWea
   let isHeadshot = false;
 
   // Check static obstructions along center ray
-  const centerRayEnd = rayOrigin.clone().add(centerRayDir.clone().multiplyScalar(maxRange));
+  _centerRayEnd.copy(_centerRayOrigin).addScaledVector(_centerRayDir, maxRange);
   let blockDist = maxRange;
-  const sharedBox = new THREE.Box3();
-  const sharedIntersect = new THREE.Vector3();
 
-  const candidateColliders = engine.spatialGrid.queryRay(rayOrigin.x, rayOrigin.z, centerRayEnd.x, centerRayEnd.z);
+  const candidateColliders = engine.spatialGrid.queryRay(_centerRayOrigin.x, _centerRayOrigin.z, _centerRayEnd.x, _centerRayEnd.z);
   for (let i = 0; i < candidateColliders.length; i++) {
     const sc = candidateColliders[i];
     if (sc.type === 'box' && sc.minX !== undefined && sc.maxX !== undefined) {
-      sharedBox.min.set(sc.minX, sc.minY || 0, sc.minZ!);
-      sharedBox.max.set(sc.maxX, sc.maxY || 100, sc.maxZ!);
-      if (forwardRaycaster.ray.intersectBox(sharedBox, sharedIntersect)) {
-        const d = rayOrigin.distanceTo(sharedIntersect);
+      _sharedBox.min.set(sc.minX, sc.minY || 0, sc.minZ!);
+      _sharedBox.max.set(sc.maxX, sc.maxY || 100, sc.maxZ!);
+      if (_shotgunRaycaster.ray.intersectBox(_sharedBox, _sharedIntersect)) {
+        const d = _centerRayOrigin.distanceTo(_sharedIntersect);
         if (d > 0.2 && d < blockDist) blockDist = d;
       }
     } else if (sc.type === 'cylinder' && sc.x !== undefined && sc.z !== undefined && sc.radius !== undefined) {
       const r = sc.radius;
-      sharedBox.min.set(sc.x - r, sc.minY || 0, sc.z - r);
-      sharedBox.max.set(sc.x + r, sc.maxY || 100, sc.z + r);
-      if (forwardRaycaster.ray.intersectBox(sharedBox, sharedIntersect)) {
-        const d = rayOrigin.distanceTo(sharedIntersect);
+      _sharedBox.min.set(sc.x - r, sc.minY || 0, sc.z - r);
+      _sharedBox.max.set(sc.x + r, sc.maxY || 100, sc.z + r);
+      if (_shotgunRaycaster.ray.intersectBox(_sharedBox, _sharedIntersect)) {
+        const d = _centerRayOrigin.distanceTo(_sharedIntersect);
         if (d > 0.2 && d < blockDist) blockDist = d;
       }
     }
   }
 
-  const candidatePieces = engine.spatialGrid.queryBuildingPiecesRay(rayOrigin.x, rayOrigin.z, centerRayEnd.x, centerRayEnd.z);
+  const candidatePieces = engine.spatialGrid.queryBuildingPiecesRay(_centerRayOrigin.x, _centerRayOrigin.z, _centerRayEnd.x, _centerRayEnd.z);
   for (let i = 0; i < candidatePieces.length; i++) {
     const piece = candidatePieces[i];
-    sharedBox.min.set(piece.x - 2.1, piece.y - 0.2, piece.z - 2.1);
-    sharedBox.max.set(piece.x + 2.1, piece.y + 4.2, piece.z + 2.1);
-    if (forwardRaycaster.ray.intersectBox(sharedBox, sharedIntersect)) {
-      const d = rayOrigin.distanceTo(sharedIntersect);
+    _sharedBox.min.set(piece.x - 2.1, piece.y - 0.2, piece.z - 2.1);
+    _sharedBox.max.set(piece.x + 2.1, piece.y + 4.2, piece.z + 2.1);
+    if (_shotgunRaycaster.ray.intersectBox(_sharedBox, _sharedIntersect)) {
+      const d = _centerRayOrigin.distanceTo(_sharedIntersect);
       if (d > 0.2 && d < blockDist) blockDist = d;
     }
   }
@@ -62,15 +71,15 @@ export function performShotgunBlastImpl(engine: FortniteEngine, wep: FortniteWea
   // Check bots inside 1-foot radius
   for (const bot of engine.bots) {
     if (!bot.isAlive) continue;
-    const botPos = new THREE.Vector3(bot.x, bot.y + 1.0, bot.z);
-    const dToRay = forwardRaycaster.ray.distanceToPoint(botPos);
-    const dToCam = rayOrigin.distanceTo(botPos);
+    _marchP.set(bot.x, bot.y + 1.0, bot.z);
+    const dToRay = _shotgunRaycaster.ray.distanceToPoint(_marchP);
+    const dToCam = _centerRayOrigin.distanceTo(_marchP);
 
     // Strict 1-foot effective radius zone and closer than any obstructing wall
     if (dToRay <= effectiveRadius && dToCam < blockDist && dToCam < primaryBotDist) {
       primaryBot = bot;
       primaryBotDist = dToCam;
-      isHeadshot = forwardRaycaster.ray.origin.y + forwardRaycaster.ray.direction.y * dToCam > bot.y + 1.45;
+      isHeadshot = _shotgunRaycaster.ray.origin.y + _shotgunRaycaster.ray.direction.y * dToCam > bot.y + 1.45;
     }
   }
 
@@ -81,14 +90,14 @@ export function performShotgunBlastImpl(engine: FortniteEngine, wep: FortniteWea
 
   for (const [rId, remote] of engine.remotePlayers) {
     if (!remote.state.isAlive) continue;
-    const rPos = new THREE.Vector3(remote.state.x, remote.state.y + 1.0, remote.state.z);
-    const dToRay = forwardRaycaster.ray.distanceToPoint(rPos);
-    const dToCam = rayOrigin.distanceTo(rPos);
+    _marchP.set(remote.state.x, remote.state.y + 1.0, remote.state.z);
+    const dToRay = _shotgunRaycaster.ray.distanceToPoint(_marchP);
+    const dToCam = _centerRayOrigin.distanceTo(_marchP);
 
     if (dToRay <= effectiveRadius && dToCam < blockDist && dToCam < primaryRemoteDist) {
       primaryRemote = { id: rId, state: remote.state, rig: remote.rig };
       primaryRemoteDist = dToCam;
-      isRemoteHeadshot = forwardRaycaster.ray.origin.y + forwardRaycaster.ray.direction.y * dToCam > remote.state.y + 1.45;
+      isRemoteHeadshot = _shotgunRaycaster.ray.origin.y + _shotgunRaycaster.ray.direction.y * dToCam > remote.state.y + 1.45;
     }
   }
 
@@ -777,11 +786,10 @@ export function updateScopeTrajectoryImpl(engine: FortniteEngine) {
 
   // 4. Ground Elevation Intersection (fast 3.5m marching)
   const stepSize = 3.5;
-  const marchP = new THREE.Vector3();
   for (let d = 3.5; d < closestDist; d += stepSize) {
-    marchP.copy(engine.sharedRaycaster.ray.origin).addScaledVector(engine.sharedRaycaster.ray.direction, d);
-    const groundH = engine.getGroundElevationAt(marchP.x, marchP.z, marchP.y);
-    if (marchP.y <= groundH) {
+    _marchP.copy(engine.sharedRaycaster.ray.origin).addScaledVector(engine.sharedRaycaster.ray.direction, d);
+    const groundH = engine.getGroundElevationAt(_marchP.x, _marchP.z, _marchP.y);
+    if (_marchP.y <= groundH) {
       closestDist = d;
       hitName = `TERRAIN ELEVATION (${Math.round(groundH)}m)`;
       isBotHit = false;
@@ -790,17 +798,17 @@ export function updateScopeTrajectoryImpl(engine: FortniteEngine) {
     }
   }
 
-  const impactPos = new THREE.Vector3().copy(engine.sharedRaycaster.ray.origin).addScaledVector(engine.sharedRaycaster.ray.direction, closestDist);
-  const muzzleOffset = new THREE.Vector3(0.2, -0.22, -0.6).applyQuaternion(engine.camera.quaternion);
-  const muzzlePos = new THREE.Vector3().copy(engine.camera.position).add(muzzleOffset);
+  _impactPos.copy(engine.sharedRaycaster.ray.origin).addScaledVector(engine.sharedRaycaster.ray.direction, closestDist);
+  _muzzleOffset.set(0.2, -0.22, -0.6).applyQuaternion(engine.camera.quaternion);
+  _muzzlePos.copy(engine.camera.position).add(_muzzleOffset);
 
   const positions = (engine.scopeLaserLine.geometry as THREE.BufferGeometry).attributes.position;
-  positions.setXYZ(0, muzzlePos.x, muzzlePos.y, muzzlePos.z);
-  positions.setXYZ(1, impactPos.x, impactPos.y, impactPos.z);
+  positions.setXYZ(0, _muzzlePos.x, _muzzlePos.y, _muzzlePos.z);
+  positions.setXYZ(1, _impactPos.x, _impactPos.y, _impactPos.z);
   positions.needsUpdate = true;
   engine.scopeLaserLine.visible = true;
 
-  engine.scopeImpactMarker.position.copy(impactPos);
+  engine.scopeImpactMarker.position.copy(_impactPos);
   engine.scopeImpactMarker.lookAt(engine.camera.position);
   engine.scopeImpactMarker.visible = true;
 
@@ -818,9 +826,9 @@ export function updateScopeTrajectoryImpl(engine: FortniteEngine) {
         targetName: hitName,
         isBot: isBotHit,
         isHeadshot: isHeadshotHit,
-        hitX: impactPos.x,
-        hitY: impactPos.y,
-        hitZ: impactPos.z,
+        hitX: _impactPos.x,
+        hitY: _impactPos.y,
+        hitZ: _impactPos.z,
       });
     }
   }

@@ -207,67 +207,68 @@ export function createCityRoadNetwork(
     scene.add(curbE);
   }
 
-  // 7. Double Yellow Centerlines & White Dashed Lane Dividers
+  // 7. Double Yellow Centerlines & White Dashed Lane Dividers (Batched with InstancedMesh)
+  const unitStripeGeo = new THREE.PlaneGeometry(1.0, 1.0);
+  unitStripeGeo.rotateX(-Math.PI / 2);
+  const stripeDummy = new THREE.Object3D();
+  const yellowMatrices: THREE.Matrix4[] = [];
+  const whiteMatrices: THREE.Matrix4[] = [];
+
+  const addStripe = (x: number, y: number, z: number, w: number, l: number, list: THREE.Matrix4[]) => {
+    stripeDummy.position.set(x, y, z);
+    stripeDummy.scale.set(w, 1.0, l);
+    stripeDummy.updateMatrix();
+    list.push(stripeDummy.matrix.clone());
+  };
+
   for (let z = -270; z <= 270; z += 9) {
     if (Math.abs(z) < 8 || Math.abs(z - 75) < 6 || Math.abs(z - -85) < 6) continue;
 
     // Central Interstate NS Double Yellow
-    const y1 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 5.0), yellowLineMat);
-    y1.rotateX(-Math.PI / 2);
-    y1.position.set(-0.25, 0.11, z);
-    scene.add(y1);
-    const y2 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 5.0), yellowLineMat);
-    y2.rotateX(-Math.PI / 2);
-    y2.position.set(0.25, 0.11, z);
-    scene.add(y2);
+    addStripe(-0.25, 0.11, z, 0.2, 5.0, yellowMatrices);
+    addStripe(0.25, 0.11, z, 0.2, 5.0, yellowMatrices);
 
     // White dashed outer lane markings
-    const wL = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 4.0), whiteLineMat);
-    wL.rotateX(-Math.PI / 2);
-    wL.position.set(-3.5, 0.11, z);
-    scene.add(wL);
-    const wR = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 4.0), whiteLineMat);
-    wR.rotateX(-Math.PI / 2);
-    wR.position.set(3.5, 0.11, z);
-    scene.add(wR);
+    addStripe(-3.5, 0.11, z, 0.25, 4.0, whiteMatrices);
+    addStripe(3.5, 0.11, z, 0.25, 4.0, whiteMatrices);
 
     // Hwy 101 Yellow Stripe
-    const yHwy1 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 5.0), yellowLineMat);
-    yHwy1.rotateX(-Math.PI / 2);
-    yHwy1.position.set(-95, 0.11, z);
-    scene.add(yHwy1);
+    addStripe(-95, 0.11, z, 0.2, 5.0, yellowMatrices);
 
     // Hwy 202 Yellow Stripe
-    const yHwy2 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 5.0), yellowLineMat);
-    yHwy2.rotateX(-Math.PI / 2);
-    yHwy2.position.set(95, 0.11, z);
-    scene.add(yHwy2);
+    addStripe(95, 0.11, z, 0.2, 5.0, yellowMatrices);
   }
 
   for (let x = -270; x <= 270; x += 9) {
     if (Math.abs(x) < 8 || Math.abs(x - -95) < 6 || Math.abs(x - 95) < 6) continue;
 
     // Central Interstate EW Double Yellow
-    const y1 = new THREE.Mesh(new THREE.PlaneGeometry(5.0, 0.2), yellowLineMat);
-    y1.rotateX(-Math.PI / 2);
-    y1.position.set(x, 0.11, -0.25);
-    scene.add(y1);
-    const y2 = new THREE.Mesh(new THREE.PlaneGeometry(5.0, 0.2), yellowLineMat);
-    y2.rotateX(-Math.PI / 2);
-    y2.position.set(x, 0.11, 0.25);
-    scene.add(y2);
+    addStripe(x, 0.11, -0.25, 5.0, 0.2, yellowMatrices);
+    addStripe(x, 0.11, 0.25, 5.0, 0.2, yellowMatrices);
 
     // I-80 North Yellow Stripe
-    const yI80 = new THREE.Mesh(new THREE.PlaneGeometry(5.0, 0.2), yellowLineMat);
-    yI80.rotateX(-Math.PI / 2);
-    yI80.position.set(x, 0.11, 75);
-    scene.add(yI80);
+    addStripe(x, 0.11, 75, 5.0, 0.2, yellowMatrices);
 
     // I-40 South Yellow Stripe
-    const yI40 = new THREE.Mesh(new THREE.PlaneGeometry(5.0, 0.2), yellowLineMat);
-    yI40.rotateX(-Math.PI / 2);
-    yI40.position.set(x, 0.11, -85);
-    scene.add(yI40);
+    addStripe(x, 0.11, -85, 5.0, 0.2, yellowMatrices);
+  }
+
+  if (yellowMatrices.length > 0) {
+    const yellowInstanced = new THREE.InstancedMesh(unitStripeGeo, yellowLineMat, yellowMatrices.length);
+    for (let i = 0; i < yellowMatrices.length; i++) {
+      yellowInstanced.setMatrixAt(i, yellowMatrices[i]);
+    }
+    yellowInstanced.instanceMatrix.needsUpdate = true;
+    scene.add(yellowInstanced);
+  }
+
+  if (whiteMatrices.length > 0) {
+    const whiteInstanced = new THREE.InstancedMesh(unitStripeGeo, whiteLineMat, whiteMatrices.length);
+    for (let i = 0; i < whiteMatrices.length; i++) {
+      whiteInstanced.setMatrixAt(i, whiteMatrices[i]);
+    }
+    whiteInstanced.instanceMatrix.needsUpdate = true;
+    scene.add(whiteInstanced);
   }
 
   // 8. Overhead Highway Destination Gantries

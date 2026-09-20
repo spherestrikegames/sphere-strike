@@ -211,9 +211,10 @@ const sharedWinGlassMat = new THREE.MeshStandardMaterial({
 const sharedWinLitMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
 const sharedWindowGeo = new THREE.PlaneGeometry(1.4, 1.4);
 const sharedSillGeo = new THREE.BoxGeometry(1.6, 0.1, 0.2);
+const _windowDummy = new THREE.Object3D();
 
 
-// Function to generate realistic illuminated window grids across skyscraper facades with shared geometries
+// Function to generate realistic illuminated window grids across skyscraper facades with shared geometries and InstancedMeshes
 export function addWindowGridToBuilding(
   buildingGroup: THREE.Group,
   width: number,
@@ -223,52 +224,83 @@ export function addWindowGridToBuilding(
   cols: number,
   floors: number
 ) {
+  const sideCols = Math.max(2, Math.round(cols * (depth / width)));
+  const totalWindows = (floors - 1) * (cols + sideCols) * 2;
+  if (totalWindows <= 0) return;
+
+  const litMatrices: THREE.Matrix4[] = [];
+  const glassMatrices: THREE.Matrix4[] = [];
+
+  const scaleXFront = (width * 0.55) / cols / 1.4;
+  const scaleY = (height * 0.55) / floors / 1.4;
+  const scaleXSide = (depth * 0.55) / sideCols / 1.4;
+
   // Front & Back Facades (along Z axis)
   for (let f = 1; f < floors; f++) {
     const wy = (f / floors) * height;
     for (let c = 0; c < cols; c++) {
       const wx = -width / 2 + (c + 0.5) * (width / cols);
       const isLit = (f + c) % 3 === 0;
-      const mat = isLit ? sharedWinLitMat : sharedWinGlassMat;
 
       // Front Window (+Z)
-      const winF = new THREE.Mesh(sharedWindowGeo, mat);
-      winF.scale.set((width * 0.55) / cols / 1.4, (height * 0.55) / floors / 1.4, 1);
-      winF.position.set(wx, wy, depth / 2 + 0.04);
-      buildingGroup.add(winF);
+      _windowDummy.position.set(wx, wy, depth / 2 + 0.04);
+      _windowDummy.rotation.set(0, 0, 0);
+      _windowDummy.scale.set(scaleXFront, scaleY, 1);
+      _windowDummy.updateMatrix();
+      if (isLit) litMatrices.push(_windowDummy.matrix.clone());
+      else glassMatrices.push(_windowDummy.matrix.clone());
 
       // Back Window (-Z)
-      const winB = new THREE.Mesh(sharedWindowGeo, mat);
-      winB.scale.set((width * 0.55) / cols / 1.4, (height * 0.55) / floors / 1.4, 1);
-      winB.rotateY(Math.PI);
-      winB.position.set(wx, wy, -depth / 2 - 0.04);
-      buildingGroup.add(winB);
+      _windowDummy.position.set(wx, wy, -depth / 2 - 0.04);
+      _windowDummy.rotation.set(0, Math.PI, 0);
+      _windowDummy.scale.set(scaleXFront, scaleY, 1);
+      _windowDummy.updateMatrix();
+      if (isLit) litMatrices.push(_windowDummy.matrix.clone());
+      else glassMatrices.push(_windowDummy.matrix.clone());
     }
   }
 
   // Left & Right Facades (along X axis)
-  const sideCols = Math.max(2, Math.round(cols * (depth / width)));
   for (let f = 1; f < floors; f++) {
     const wy = (f / floors) * height;
     for (let c = 0; c < sideCols; c++) {
       const wz = -depth / 2 + (c + 0.5) * (depth / sideCols);
       const isLit = (f * 2 + c) % 4 === 0;
-      const mat = isLit ? sharedWinLitMat : sharedWinGlassMat;
 
       // Right Window (+X)
-      const winR = new THREE.Mesh(sharedWindowGeo, mat);
-      winR.scale.set((depth * 0.55) / sideCols / 1.4, (height * 0.55) / floors / 1.4, 1);
-      winR.rotateY(Math.PI / 2);
-      winR.position.set(width / 2 + 0.04, wy, wz);
-      buildingGroup.add(winR);
+      _windowDummy.position.set(width / 2 + 0.04, wy, wz);
+      _windowDummy.rotation.set(0, Math.PI / 2, 0);
+      _windowDummy.scale.set(scaleXSide, scaleY, 1);
+      _windowDummy.updateMatrix();
+      if (isLit) litMatrices.push(_windowDummy.matrix.clone());
+      else glassMatrices.push(_windowDummy.matrix.clone());
 
       // Left Window (-X)
-      const winL = new THREE.Mesh(sharedWindowGeo, mat);
-      winL.scale.set((depth * 0.55) / sideCols / 1.4, (height * 0.55) / floors / 1.4, 1);
-      winL.rotateY(-Math.PI / 2);
-      winL.position.set(-width / 2 - 0.04, wy, wz);
-      buildingGroup.add(winL);
+      _windowDummy.position.set(-width / 2 - 0.04, wy, wz);
+      _windowDummy.rotation.set(0, -Math.PI / 2, 0);
+      _windowDummy.scale.set(scaleXSide, scaleY, 1);
+      _windowDummy.updateMatrix();
+      if (isLit) litMatrices.push(_windowDummy.matrix.clone());
+      else glassMatrices.push(_windowDummy.matrix.clone());
     }
+  }
+
+  if (litMatrices.length > 0) {
+    const litInstanced = new THREE.InstancedMesh(sharedWindowGeo, sharedWinLitMat, litMatrices.length);
+    for (let i = 0; i < litMatrices.length; i++) {
+      litInstanced.setMatrixAt(i, litMatrices[i]);
+    }
+    litInstanced.instanceMatrix.needsUpdate = true;
+    buildingGroup.add(litInstanced);
+  }
+
+  if (glassMatrices.length > 0) {
+    const glassInstanced = new THREE.InstancedMesh(sharedWindowGeo, sharedWinGlassMat, glassMatrices.length);
+    for (let i = 0; i < glassMatrices.length; i++) {
+      glassInstanced.setMatrixAt(i, glassMatrices[i]);
+    }
+    glassInstanced.instanceMatrix.needsUpdate = true;
+    buildingGroup.add(glassInstanced);
   }
 }
 
