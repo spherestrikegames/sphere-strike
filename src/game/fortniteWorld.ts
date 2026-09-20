@@ -136,8 +136,8 @@ export function buildFortniteIsland(scene: THREE.Scene): {
 
 // --- Re-exports (preserve the original public surface of this file) ---
 export { createUpgradeBenchMesh, build1v1Arena } from './fortniteWorldArena';
-export { UpgradeBenchStation } from './fortniteWorldArena';
+export type { UpgradeBenchStation } from './fortniteWorldArena';
 export { createHarvestableTree } from './fortniteWorldNature';
 export { SKYSCRAPER_LAUNCH_PADS, isPointInLake, isPointInsideStructureOrNoSpawnZone, isPointNearRoad, isPointOnRoad, getTerrainHeight, getGroundSurface } from './fortniteWorldTerrain';
-export { WorldGenResult, SkyscraperLaunchPad } from './fortniteWorldTerrain';
+export type { WorldGenResult, SkyscraperLaunchPad } from './fortniteWorldTerrain';
 export { addDetailedDrivableVehicle } from './fortniteWorldVehiclesProps';
