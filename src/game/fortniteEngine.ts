@@ -396,8 +396,9 @@ export class FortniteEngine {
   public hemiLight: THREE.HemisphereLight | null = null;
 
   public getLoadedWeapon(weaponId: string): FortniteWeapon {
-    const base = WEAPON_REGISTRY[weaponId] || WEAPON_REGISTRY.ar_scar;
-    const tier = this.profile?.weaponTiers?.[weaponId] || 1;
+    const key = weaponId && WEAPON_REGISTRY[weaponId] ? weaponId : 'ar_scar';
+    const base = WEAPON_REGISTRY[key] || WEAPON_REGISTRY.rifle_burst || WEAPON_REGISTRY.shotgun_double_barrel || DEFAULT_PICKAXE;
+    const tier = this.profile?.weaponTiers?.[key] || 1;
     const stats = getWeaponEffectiveStats(base, tier, this.profile?.armoryPerks);
 
     return {
