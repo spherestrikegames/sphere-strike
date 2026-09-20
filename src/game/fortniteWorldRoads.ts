@@ -8,7 +8,7 @@ import { addDetailedDrivableVehicle } from './fortniteWorldVehiclesProps';
 // -------------------------------------------------------------
 // DENSE ROAD & HIGHWAY NETWORK (EXPANDED ACROSS FULL ISLAND)
 // -------------------------------------------------------------
-function createCityRoadNetwork(
+export function createCityRoadNetwork(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   colliders: SolidCollider[],

@@ -295,7 +295,7 @@ function addNaturalCliffFaces(scene: THREE.Scene, colliders: SolidCollider[]) {
 
 
 // Populate Trees and Boulders Across Island with Strict Collision Zone Checks
-function populateNature(
+export function populateNature(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   colliders: SolidCollider[],
@@ -348,7 +348,7 @@ function populateNature(
   }
 }
 
-function addHarvestable(
+export function addHarvestable(
   list: HarvestableObject[],
   x: number,
   y: number,
@@ -385,7 +385,7 @@ function addHarvestable(
   return harv;
 }
 
-function addChest(
+export function addChest(
   scene: THREE.Scene,
   chests: LootChest[],
   chestMeshes: Map<string, THREE.Group>,

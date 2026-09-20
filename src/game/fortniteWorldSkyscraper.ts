@@ -10,7 +10,7 @@ import { SKYSCRAPER_LAUNCH_PADS } from './fortniteWorldTerrain';
 // -------------------------------------------------------------
 // WALKABLE SKYSCRAPER BUILDER WITH GRAND LOBBY, STAIRS TO ROOF & INTERIORS
 // -------------------------------------------------------------
-function buildWalkableSkyscraper(
+export function buildWalkableSkyscraper(
   scene: THREE.Scene,
   parent: THREE.Group,
   harvestables: HarvestableObject[],

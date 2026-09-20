@@ -9,7 +9,7 @@ import { getTerrainHeight } from './fortniteWorldTerrain';
 // -------------------------------------------------------------
 // GEOLOGICAL FEATURE 1: GRAND CANYON & ROPE SUSPENSION BRIDGE
 // -------------------------------------------------------------
-function buildGrandCanyonAndBridge(
+export function buildGrandCanyonAndBridge(
   scene: THREE.Scene,
   colliders: SolidCollider[],
   chests: LootChest[],
@@ -87,7 +87,7 @@ function buildGrandCanyonAndBridge(
 // -------------------------------------------------------------
 // GEOLOGICAL FEATURE 2: VOLCANO & GEOTHERMAL STEAM VENTS
 // -------------------------------------------------------------
-function buildVolcanoAndHotSprings(
+export function buildVolcanoAndHotSprings(
   scene: THREE.Scene,
   colliders: SolidCollider[],
   chests: LootChest[],
@@ -138,7 +138,7 @@ function buildVolcanoAndHotSprings(
 // -------------------------------------------------------------
 // GEOLOGICAL FEATURE 3: MOUNTAIN OBSERVATION FORTRESS & DAM OVERLOOK
 // -------------------------------------------------------------
-function buildWaterfallAndDam(scene: THREE.Scene, colliders: SolidCollider[]) {
+export function buildWaterfallAndDam(scene: THREE.Scene, colliders: SolidCollider[]) {
   const root = new THREE.Group();
   root.position.set(-90, 0, 45);
 
@@ -171,7 +171,7 @@ function buildWaterfallAndDam(scene: THREE.Scene, colliders: SolidCollider[]) {
 
 
 // Mountain Rock Formations
-function buildMountainPeaks(scene: THREE.Scene, colliders: SolidCollider[]) {
+export function buildMountainPeaks(scene: THREE.Scene, colliders: SolidCollider[]) {
   const rockMat = new THREE.MeshStandardMaterial({
     color: 0x64748b,
     roughness: 0.95,

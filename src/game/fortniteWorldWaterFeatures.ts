@@ -9,7 +9,7 @@ import { addDetailedDrivableVehicle } from './fortniteWorldVehiclesProps';
 // -------------------------------------------------------------
 // SCENIC LITTLE LAKES (LOOT LAKE, PLEASANT POND, SALTY OASIS, ALPINE TARN, HOT SPRINGS)
 // -------------------------------------------------------------
-function createScenicLittleLakes(
+export function createScenicLittleLakes(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   colliders: SolidCollider[],
@@ -398,7 +398,7 @@ function createScenicLittleLakes(
 // -------------------------------------------------------------
 // POI 5: LOOT LAKE
 // -------------------------------------------------------------
-function buildLootLake(
+export function buildLootLake(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   chests: LootChest[],

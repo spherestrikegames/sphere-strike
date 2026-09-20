@@ -10,7 +10,7 @@ import { addDetailedDrivableVehicle, addDumpster } from './fortniteWorldVehicles
 // -------------------------------------------------------------
 // MEGA-CITY: TILTED TOWERS WITH DETAILED SKYSCRAPERS & WINDOWS
 // -------------------------------------------------------------
-function buildMegaCity(
+export function buildMegaCity(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   chests: LootChest[],
@@ -214,7 +214,7 @@ const sharedSillGeo = new THREE.BoxGeometry(1.6, 0.1, 0.2);
 
 
 // Function to generate realistic illuminated window grids across skyscraper facades with shared geometries
-function addWindowGridToBuilding(
+export function addWindowGridToBuilding(
   buildingGroup: THREE.Group,
   width: number,
   height: number,

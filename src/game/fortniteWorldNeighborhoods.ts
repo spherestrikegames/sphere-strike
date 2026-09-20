@@ -10,7 +10,7 @@ import { addDetailedDrivableVehicle } from './fortniteWorldVehiclesProps';
 // -------------------------------------------------------------
 // SUBTLE NATURAL GRASS TUFTS (REDUCED DENSITY, ZERO ROADS, ZERO LAG)
 // -------------------------------------------------------------
-function populateLushGrass(scene: THREE.Scene) {
+export function populateLushGrass(scene: THREE.Scene) {
   const grassMat = new THREE.MeshStandardMaterial({
     color: 0x4ade80,
     roughness: 0.85,
@@ -59,7 +59,7 @@ function populateLushGrass(scene: THREE.Scene) {
 // -------------------------------------------------------------
 // POI 2: PLEASANT PARK (Soccer Field, Ultra-Detailed Suburban Homes)
 // -------------------------------------------------------------
-function buildPleasantPark(
+export function buildPleasantPark(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   chests: LootChest[],
@@ -144,7 +144,7 @@ function buildPleasantPark(
 // -------------------------------------------------------------
 // ULTRA-DETAILED SUBURBAN HOME GENERATOR (FULL WALKABLE INTERIOR)
 // -------------------------------------------------------------
-function addDetailedSuburbanHome(
+export function addDetailedSuburbanHome(
   parent: THREE.Group,
   harvestables: HarvestableObject[],
   colliders: SolidCollider[],

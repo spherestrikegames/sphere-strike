@@ -263,7 +263,7 @@ function addCar(
 
 
 // Helper: Dumpster (Solid)
-function addDumpster(
+export function addDumpster(
   parent: THREE.Group,
   harvestables: HarvestableObject[],
   colliders: SolidCollider[],

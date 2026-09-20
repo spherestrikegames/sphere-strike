@@ -10,7 +10,7 @@ import { addDetailedDrivableVehicle } from './fortniteWorldVehiclesProps';
 // -------------------------------------------------------------
 // POI 3: DUSTY DEPOT (3 Industrial Warehouses & Container Yard)
 // -------------------------------------------------------------
-function buildDustyDepot(
+export function buildDustyDepot(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   chests: LootChest[],
@@ -184,7 +184,7 @@ function buildDustyDepot(
 // -------------------------------------------------------------
 // POI 4: SALTY SPRINGS
 // -------------------------------------------------------------
-function buildSaltySprings(
+export function buildSaltySprings(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   chests: LootChest[],
@@ -272,7 +272,7 @@ function buildSaltySprings(
 // -------------------------------------------------------------
 // POI 6: RETAIL ROW
 // -------------------------------------------------------------
-function buildRetailRow(
+export function buildRetailRow(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   chests: LootChest[],
@@ -356,7 +356,7 @@ function buildRetailRow(
 // -------------------------------------------------------------
 // POI 7: SNOBBY SHORES (Luxury Waterfront Estates & Garages)
 // -------------------------------------------------------------
-function buildSnobbyShores(
+export function buildSnobbyShores(
   scene: THREE.Scene,
   harvestables: HarvestableObject[],
   chests: LootChest[],
