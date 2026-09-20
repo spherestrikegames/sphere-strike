@@ -506,6 +506,36 @@ export function updateCameraAndRigsImpl(engine: FortniteEngine, dt: number) {
       engine.gliderMesh.rotation.y = engine.playerRotY;
     }
   }
+
+  // Smooth remote players interpolation & rig synchronization
+  const lerpAlpha = Math.min(1.0, dt * 14.0);
+  for (const [_, remote] of engine.remotePlayers) {
+    if (!remote.state.isAlive) {
+      remote.rig.root.visible = false;
+      continue;
+    }
+    remote.rig.root.visible = true;
+
+    if (remote.targetPos) {
+      const prevX = remote.rig.root.position.x;
+      const prevZ = remote.rig.root.position.z;
+      remote.rig.root.position.lerp(remote.targetPos, lerpAlpha);
+      remote.state.x = remote.rig.root.position.x;
+      remote.state.y = remote.rig.root.position.y;
+      remote.state.z = remote.rig.root.position.z;
+
+      if (remote.targetRotY !== undefined) {
+        let diff = remote.targetRotY - remote.state.rotY;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        remote.state.rotY += diff * lerpAlpha;
+        remote.rig.root.rotation.y = remote.state.rotY + Math.PI;
+      }
+
+      const isMoving = Math.hypot(remote.rig.root.position.x - prevX, remote.rig.root.position.z - prevZ) > 0.005;
+      remote.rig.updateAnimation(performance.now() * 0.001, isMoving, false, false);
+    }
+  }
 }
 
 export function updateStormImpl(engine: FortniteEngine, dt: number) {

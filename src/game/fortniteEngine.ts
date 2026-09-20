@@ -283,7 +283,17 @@ export class FortniteEngine {
   public botNameTags: Map<string, THREE.Sprite> = new Map();
 
   // Remote Online Party Players
-  public remotePlayers: Map<string, { state: RemotePlayerState; rig: CharacterMeshRig; respawnsUsed?: number }> = new Map();
+  public remotePlayers: Map<
+    string,
+    {
+      state: RemotePlayerState;
+      rig: CharacterMeshRig;
+      respawnsUsed?: number;
+      targetPos?: THREE.Vector3;
+      targetRotY?: number;
+      targetPitch?: number;
+    }
+  > = new Map();
   public lastNetworkSyncTime: number = 0;
 
   // Battle Royale Duel & Respawn Mechanics (3 respawns allowed, 4th death loses)

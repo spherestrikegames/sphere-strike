@@ -71,6 +71,7 @@ export function fireActiveWeaponImpl(engine: FortniteEngine) {
   // Sync to Online Party
   multiplayerClient.sendPlayerAction({
     type: 'shoot',
+    weaponType: wep.type,
     origin: { x: engine.playerPos.x, y: engine.playerPos.y + 1.6, z: engine.playerPos.z },
     target: {
       x: engine.playerPos.x - Math.sin(engine.playerRotY) * 50,

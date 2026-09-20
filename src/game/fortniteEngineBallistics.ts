@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { FortniteWeapon, BuildingPiece, HarvestableObject, BotPlayer, RemotePlayerState } from '../types';
 import { CharacterMeshRig, updateNameTagSprite } from './fortniteCharacter';
 import { fortniteAudio } from '../utils/audio';
+import { multiplayerClient } from '../utils/multiplayer';
 import type { FortniteEngine } from './fortniteEngine';
 
 
@@ -319,6 +320,10 @@ export function performBulletRaycastImpl(engine: FortniteEngine, wep: FortniteWe
         engine.scene.remove(bData.mesh);
         engine.buildingPieces.delete(hitBuildingPieceId);
         engine.spatialGrid.removeBuildingPiece(hitBuildingPieceId);
+        multiplayerClient.sendPlayerAction({
+          type: 'build_destroy',
+          pieceId: hitBuildingPieceId,
+        });
       }
     }
   } else if (hitStaticCollider) {
@@ -576,6 +581,10 @@ export function performPickaxeHitImpl(engine: FortniteEngine) {
       engine.scene.remove(mesh);
       engine.buildingPieces.delete(id);
       engine.spatialGrid.removeBuildingPiece(id);
+      multiplayerClient.sendPlayerAction({
+        type: 'build_destroy',
+        pieceId: id,
+      });
     }
     return;
   }

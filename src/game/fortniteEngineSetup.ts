@@ -340,6 +340,9 @@ export function setupMultiplayerImpl(engine: FortniteEngine) {
             isShooting: false,
           },
           rig,
+          targetPos: new THREE.Vector3(data.x || 0, data.y || 2, data.z || 0),
+          targetRotY: data.rotY || 0,
+          targetPitch: data.pitch || 0,
         };
         const nameTag = createNameTagSprite(remote.state.name, false, 'OMEGA', 1.0, 0.5);
         rig.root.add(nameTag);
@@ -347,25 +350,25 @@ export function setupMultiplayerImpl(engine: FortniteEngine) {
         engine.updatePlayersLeftCount();
       }
 
-      const prevX = remote.state.x;
-      const prevZ = remote.state.z;
       if (data.name !== undefined) remote.state.name = data.name;
-      if (data.x !== undefined) remote.state.x = data.x;
-      if (data.y !== undefined) remote.state.y = data.y;
-      if (data.z !== undefined) remote.state.z = data.z;
-      if (data.rotY !== undefined) remote.state.rotY = data.rotY;
-      if (data.pitch !== undefined) remote.state.pitch = data.pitch;
+      if (data.x !== undefined) remote.targetPos.x = data.x;
+      if (data.y !== undefined) remote.targetPos.y = data.y;
+      if (data.z !== undefined) remote.targetPos.z = data.z;
+      if (data.rotY !== undefined) remote.targetRotY = data.rotY;
+      if (data.pitch !== undefined) {
+        remote.state.pitch = data.pitch;
+        remote.targetPitch = data.pitch;
+      }
       if (data.health !== undefined) remote.state.health = data.health;
       if (data.shield !== undefined) remote.state.shield = data.shield;
+      if (data.activeWeaponType !== undefined && data.activeWeaponType !== remote.state.activeWeaponType) {
+        remote.state.activeWeaponType = data.activeWeaponType;
+        remote.rig.setWeapon(data.activeWeaponType, data.weaponRarity || 'epic');
+      }
       if (data.isAlive !== undefined) {
         remote.state.isAlive = data.isAlive;
         remote.rig.root.visible = data.isAlive;
       }
-
-      const isMoving = Math.hypot(remote.state.x - prevX, remote.state.z - prevZ) > 0.05;
-      remote.rig.root.position.set(remote.state.x, remote.state.y, remote.state.z);
-      remote.rig.root.rotation.y = remote.state.rotY + Math.PI;
-      remote.rig.updateAnimation(performance.now() * 0.001, isMoving, false, false);
     },
     onPlayerLeave: (playerId) => {
       const remote = engine.remotePlayers.get(playerId);
@@ -380,14 +383,31 @@ export function setupMultiplayerImpl(engine: FortniteEngine) {
         const start = new THREE.Vector3(action.origin.x, action.origin.y, action.origin.z);
         const end = new THREE.Vector3(action.target.x, action.target.y, action.target.z);
         engine.createBulletTracer(start, end);
-        fortniteAudio.playGunshotAR(false);
+        if (action.weaponType === 'shotgun') {
+          fortniteAudio.playGunshotShotgun();
+        } else if (action.weaponType === 'sniper') {
+          fortniteAudio.playGunshotSniper();
+        } else if (action.weaponType === 'smg') {
+          fortniteAudio.playGunshotSMG();
+        } else {
+          fortniteAudio.playGunshotAR(false);
+        }
       } else if (action.type === 'build') {
         const piece = action.piece;
         if (!engine.buildingPieces.has(piece.id)) {
           const mesh = createPlacedBuildingMesh(piece);
           engine.scene.add(mesh);
           engine.buildingPieces.set(piece.id, { piece, mesh });
+          engine.spatialGrid.addBuildingPiece(piece);
           fortniteAudio.playBuildPlace(piece.material);
+        }
+      } else if (action.type === 'build_destroy') {
+        const bData = engine.buildingPieces.get(action.pieceId);
+        if (bData) {
+          fortniteAudio.playStructureDestroy(bData.piece.material);
+          engine.scene.remove(bData.mesh);
+          engine.buildingPieces.delete(action.pieceId);
+          engine.spatialGrid.removeBuildingPiece(action.pieceId);
         }
       } else if (action.type === 'damage_player') {
         if (action.targetId === multiplayerClient.myPlayerId) {
@@ -440,6 +460,7 @@ export function setupMultiplayerImpl(engine: FortniteEngine) {
           remote.state.x = action.x;
           remote.state.y = action.y;
           remote.state.z = action.z;
+          remote.targetPos.set(action.x, action.y, action.z);
           remote.respawnsUsed = action.respawnsUsed;
           remote.rig.root.position.set(action.x, action.y, action.z);
 
@@ -497,6 +518,9 @@ export function setupMultiplayerImpl(engine: FortniteEngine) {
           isShooting: false,
         },
         rig,
+        targetPos: new THREE.Vector3(0, 2, 0),
+        targetRotY: 0,
+        targetPitch: 0,
       };
       const nameTag = createNameTagSprite(remote.state.name, false, 'OMEGA', 1.0, 0.5);
       rig.root.add(nameTag);

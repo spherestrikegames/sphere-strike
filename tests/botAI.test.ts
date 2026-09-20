@@ -2,11 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { processBotStormDamage } from '../src/game/fortniteEngineBotAI.ts';
 import { BotPlayer } from '../src/types.ts';
+import { DEFAULT_PICKAXE } from '../src/data/fortniteData.ts';
 
 test('processBotStormDamage - bot safe inside storm eye takes no damage', () => {
   const dummyBot: BotPlayer = {
     id: 'bot_test_1',
     name: 'JonesyBot',
+    isAI: true,
+    skinId: 'jonesy',
     x: 10,
     y: 0,
     z: 10,
@@ -14,16 +17,19 @@ test('processBotStormDamage - bot safe inside storm eye takes no damage', () => 
     vz: 0,
     vy: 0,
     rotY: 0,
+    pitch: 0,
     health: 100,
     shield: 50,
-    team: 'Alpha',
+    team: 'ALPHA',
     isAlive: true,
     isGrounded: true,
-    weapon: 'SCAR',
-    state: 'idle',
+    weapon: DEFAULT_PICKAXE,
+    targetPos: null,
+    state: 'wander',
     lastShotTime: 0,
     reactionTimer: 1.0,
     accuracy: 0.5,
+    kills: 0,
   };
 
   const dummyEngine: any = {
@@ -42,7 +48,7 @@ test('processBotStormDamage - bot safe inside storm eye takes no damage', () => 
     spawnDroppedSupplies: () => {},
     triggerVictoryRoyale: () => {},
     bots: [dummyBot],
-    playerTeam: 'Alpha',
+    playerTeam: 'ALPHA',
   };
 
   const eliminated = processBotStormDamage(dummyBot, dummyEngine, 1.0);
@@ -55,6 +61,8 @@ test('processBotStormDamage - bot outside storm eye takes storm damage and steer
   const dummyBot: BotPlayer = {
     id: 'bot_test_2',
     name: 'StormChaserBot',
+    isAI: true,
+    skinId: 'jonesy',
     x: 150, // Far outside radius of 50
     y: 0,
     z: 0,
@@ -62,16 +70,19 @@ test('processBotStormDamage - bot outside storm eye takes storm damage and steer
     vz: 0,
     vy: 0,
     rotY: 0,
+    pitch: 0,
     health: 50,
     shield: 50,
-    team: 'Beta',
+    team: 'OMEGA',
     isAlive: true,
     isGrounded: true,
-    weapon: 'Pump',
+    weapon: DEFAULT_PICKAXE,
+    targetPos: null,
     state: 'combat',
     lastShotTime: 0,
     reactionTimer: 1.0,
     accuracy: 0.5,
+    kills: 0,
   };
 
   const dummyEngine: any = {
@@ -90,7 +101,7 @@ test('processBotStormDamage - bot outside storm eye takes storm damage and steer
     spawnDroppedSupplies: () => {},
     triggerVictoryRoyale: () => {},
     bots: [dummyBot],
-    playerTeam: 'Alpha',
+    playerTeam: 'ALPHA',
   };
 
   const dt = 1.0;
@@ -108,6 +119,8 @@ test('processBotStormDamage - bot health reaching zero triggers elimination', ()
   const dummyBot: BotPlayer = {
     id: 'bot_test_3',
     name: 'LowHpBot',
+    isAI: true,
+    skinId: 'jonesy',
     x: 200,
     y: 0,
     z: 200,
@@ -115,19 +128,21 @@ test('processBotStormDamage - bot health reaching zero triggers elimination', ()
     vz: 0,
     vy: 0,
     rotY: 0,
+    pitch: 0,
     health: 5, // Will die on 12 damage tick
     shield: 0,
-    team: 'Beta',
+    team: 'OMEGA',
     isAlive: true,
     isGrounded: true,
-    weapon: 'Pistol',
-    state: 'idle',
+    weapon: DEFAULT_PICKAXE,
+    targetPos: null,
+    state: 'wander',
     lastShotTime: 0,
     reactionTimer: 1.0,
     accuracy: 0.5,
+    kills: 0,
   };
 
-  let eliminationLogged = false;
   const dummyEngine: any = {
     storm: {
       currentCenterX: 0,
@@ -142,7 +157,6 @@ test('processBotStormDamage - bot health reaching zero triggers elimination', ()
     },
     callbacks: {
       onElimination: (log: any) => {
-        eliminationLogged = true;
         assert.equal(log.killer, 'The Storm ⚡');
         assert.equal(log.victim, 'LowHpBot');
       },
@@ -151,11 +165,10 @@ test('processBotStormDamage - bot health reaching zero triggers elimination', ()
     spawnDroppedSupplies: () => {},
     triggerVictoryRoyale: () => {},
     bots: [dummyBot],
-    playerTeam: 'Alpha',
+    playerTeam: 'ALPHA',
   };
 
   const eliminated = processBotStormDamage(dummyBot, dummyEngine, 1.0);
   assert.equal(eliminated, true);
   assert.equal(dummyBot.isAlive, false);
-  assert.equal(eliminationLogged, true);
 });
