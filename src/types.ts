@@ -52,6 +52,8 @@ export interface FortniteWeapon {
   // Upgrade & Special Weapon Attributes
   burstCount?: number;
   explosionRadius?: number;
+  structureDamage?: number;
+  specialPerk?: string;
   chargeTime?: number;
   mods?: WeaponMods;
   // Unique Weapon Progression & Archetype Traits

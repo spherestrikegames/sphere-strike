@@ -362,32 +362,60 @@ export class FortniteGunshotsEngine extends FortniteSoundSystemCore {
     if (!this.ctx || !this.masterGainNode) return;
 
     const t = this.ctx.currentTime;
-    const noise = this.createNoiseBuffer(0.6);
+
+    // High-Pressure Noise Wave (Supersonic crack + muzzle blast)
+    const noise = this.createNoiseBuffer(0.85);
     const noiseNode = this.ctx.createBufferSource();
     noiseNode.buffer = noise;
 
     const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(3200, t);
-    filter.Q.value = 2;
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(5000, t);
+    filter.frequency.exponentialRampToValueAtTime(150, t + 0.7);
 
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(1.0, t);
-    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
+    gain.gain.exponentialRampToValueAtTime(0.005, t + 0.8);
 
+    // Deep 50-Caliber Sub-Bass Punch (Chest-thumping 120Hz down to 25Hz)
     const sub = this.ctx.createOscillator();
-    sub.type = 'triangle';
-    sub.frequency.setValueAtTime(95, t);
-    sub.frequency.exponentialRampToValueAtTime(25, t + 0.4);
+    sub.type = 'sawtooth';
+    sub.frequency.setValueAtTime(120, t);
+    sub.frequency.exponentialRampToValueAtTime(25, t + 0.5);
+
+    const subGain = this.ctx.createGain();
+    subGain.gain.setValueAtTime(0.85, t);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
 
     noiseNode.connect(filter);
     filter.connect(gain);
-    sub.connect(gain);
     gain.connect(this.masterGainNode);
+
+    sub.connect(subGain);
+    subGain.connect(this.masterGainNode);
 
     noiseNode.start(t);
     sub.start(t);
-    sub.stop(t + 0.6);
+    sub.stop(t + 0.8);
+
+    // Heavy Metallic Bolt-Action Mechanical Slide
+    setTimeout(() => {
+      if (!this.ctx || !this.masterGainNode) return;
+      const t2 = this.ctx.currentTime;
+      const boltOsc = this.ctx.createOscillator();
+      const boltGain = this.ctx.createGain();
+      boltOsc.type = 'triangle';
+      boltOsc.frequency.setValueAtTime(750, t2);
+      boltOsc.frequency.exponentialRampToValueAtTime(280, t2 + 0.12);
+
+      boltGain.gain.setValueAtTime(0.35, t2);
+      boltGain.gain.exponentialRampToValueAtTime(0.01, t2 + 0.14);
+
+      boltOsc.connect(boltGain);
+      boltGain.connect(this.masterGainNode);
+      boltOsc.start(t2);
+      boltOsc.stop(t2 + 0.15);
+    }, 280);
   }
 
   public playGunshotFlintKnock() {

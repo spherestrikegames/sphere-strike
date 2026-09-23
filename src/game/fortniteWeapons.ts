@@ -329,29 +329,75 @@ export function createWeaponMesh(type: WeaponType, rarity: WeaponRarity, weaponI
       group.scale.set(1.05, 1.05, 1.05);
     }
   } else if (type === 'sniper') {
-    // Bolt-Action Sniper Rifle
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.75), darkGunMat);
+    // High-Caliber Anti-Materiel Heavy Sniper Rifle
+    const bodyMat = rarity === 'legendary' || rarity === 'mythic' ? goldGunMat : darkGunMat;
+    const carbonMat = new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.8, roughness: 0.3 });
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x27272a, metalness: 0.9, roughness: 0.2 });
+
+    // Receiver & Heavy Receiver Stock
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.12, 0.8), bodyMat);
     group.add(body);
 
-    // Long Sniper Barrel
+    const cheekRest = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.04, 0.25), carbonMat);
+    cheekRest.position.set(0, 0.08, 0.22);
+    group.add(cheekRest);
+
+    // Heavy 50-Caliber Long Fluted Barrel
     const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.014, 0.014, 0.65, 8),
-      darkGunMat
+      new THREE.CylinderGeometry(0.018, 0.018, 0.75, 10),
+      steelMat
     );
     barrel.rotateX(Math.PI / 2);
-    barrel.position.set(0, 0.02, -0.65);
+    barrel.position.set(0, 0.03, -0.72);
     group.add(barrel);
 
-    // Scope Tube
+    // Massive Multi-Slot Anti-Materiel Muzzle Brake
+    const muzzleBrake = new THREE.Mesh(
+      new THREE.BoxGeometry(0.05, 0.05, 0.12),
+      bodyMat
+    );
+    muzzleBrake.position.set(0, 0.03, -1.1);
+    group.add(muzzleBrake);
+
+    // High-Power Dual-Ring Telescopic Scope
     const scopeTube = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.028, 0.028, 0.32, 12),
-      new THREE.MeshStandardMaterial({ color: 0x09090b, metalness: 0.9 })
+      new THREE.CylinderGeometry(0.032, 0.032, 0.38, 12),
+      carbonMat
     );
     scopeTube.rotateX(Math.PI / 2);
-    scopeTube.position.set(0, 0.09, -0.1);
+    scopeTube.position.set(0, 0.11, -0.12);
     group.add(scopeTube);
 
-    group.scale.set(1.15, 1.15, 1.15);
+    const scopeLens = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.033, 0.033, 0.02, 12),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.5, transparent: true, opacity: 0.8 })
+    );
+    scopeLens.rotateX(Math.PI / 2);
+    scopeLens.position.set(0, 0.11, -0.31);
+    group.add(scopeLens);
+
+    // Tactical Bipod Legs under front barrel
+    const bipodMount = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.06), steelMat);
+    bipodMount.position.set(0, -0.04, -0.55);
+    group.add(bipodMount);
+
+    const bipodLegL = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 6), steelMat);
+    bipodLegL.rotation.z = Math.PI / 6;
+    bipodLegL.position.set(-0.06, -0.12, -0.55);
+    group.add(bipodLegL);
+
+    const bipodLegR = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 6), steelMat);
+    bipodLegR.rotation.z = -Math.PI / 6;
+    bipodLegR.position.set(0.06, -0.12, -0.55);
+    group.add(bipodLegR);
+
+    // Large 50-Caliber Box Magazine
+    const heavyMag = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.22, 0.09), carbonMat);
+    heavyMag.rotateX(-0.15);
+    heavyMag.position.set(0, -0.12, -0.08);
+    group.add(heavyMag);
+
+    group.scale.set(1.2, 1.2, 1.2);
   } else if (type === 'explosive') {
     // Rocket Launcher (RPG)
     const tube = new THREE.Mesh(

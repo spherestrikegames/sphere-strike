@@ -45,7 +45,10 @@ export function fireActiveWeaponImpl(engine: FortniteEngine) {
   // Play Weapon Audio
   if (wep.type === 'ar') fortniteAudio.playGunshotAR(wep.rarity === 'legendary');
   else if (wep.type === 'shotgun') fortniteAudio.playGunshotShotgun();
-  else if (wep.type === 'sniper') fortniteAudio.playGunshotSniper();
+  else if (wep.type === 'sniper') {
+    if (wep.id === 'sniper_heavy_legendary') fortniteAudio.playGunshotHeavySniper();
+    else fortniteAudio.playGunshotSniper();
+  }
   else if (wep.type === 'smg') fortniteAudio.playGunshotSMG();
 
   // Muzzle Flash & Point Light
@@ -55,12 +58,13 @@ export function fireActiveWeaponImpl(engine: FortniteEngine) {
   setTimeout(() => engine.camera.remove(flash), 55);
 
   // Realistic Procedural Recoil Kick
-  const recoilKick = wep.type === 'sniper' ? 0.065 : wep.type === 'shotgun' ? 0.05 : 0.022;
+  const isHeavy = wep.id === 'sniper_heavy_legendary';
+  const recoilKick = isHeavy ? 0.12 : wep.type === 'sniper' ? 0.065 : wep.type === 'shotgun' ? 0.05 : 0.022;
   engine.playerPitch += recoilKick;
-  engine.recoilRecoilZ = 0.12;
-  engine.recoilRecoilY = 0.04;
-  engine.recoilRecoilRotX = -0.15;
-  engine.screenShake = 0.05;
+  engine.recoilRecoilZ = isHeavy ? 0.22 : 0.12;
+  engine.recoilRecoilY = isHeavy ? 0.08 : 0.04;
+  engine.recoilRecoilRotX = isHeavy ? -0.28 : -0.15;
+  engine.screenShake = isHeavy ? 0.12 : 0.05;
 
   // Eject Brass Shell Casing
   engine.ejectShellCasing();

@@ -302,20 +302,28 @@ export function performBulletRaycastImpl(engine: FortniteEngine, wep: FortniteWe
   if (hitBuildingPieceId) {
     const bData = engine.buildingPieces.get(hitBuildingPieceId);
     if (bData) {
-      const dmg = wep.damage;
+      const isHeavySniper = wep.id === 'sniper_heavy_legendary' || (wep as any).structureDamage >= 1000;
+      const dmg = isHeavySniper ? 1000 : (wep as any).structureDamage || wep.damage;
       bData.piece.health -= dmg;
-      fortniteAudio.playHarvestHit(bData.piece.material, false);
+      fortniteAudio.playHarvestHit(bData.piece.material, isHeavySniper);
       engine.addDamageNumber(
-        dmg.toString(),
+        isHeavySniper ? '💥 SHATTER (1000)' : dmg.toString(),
         '#facc15',
-        false,
+        isHeavySniper,
         false,
         bData.piece.x,
         bData.piece.y + 2,
         bData.piece.z
       );
 
+      if (isHeavySniper) {
+        engine.screenShake = 0.15;
+      }
+
       if (bData.piece.health <= 0) {
+        if (isHeavySniper) {
+          fortniteAudio.playBuildResetShockwave();
+        }
         fortniteAudio.playStructureDestroy(bData.piece.material);
         engine.scene.remove(bData.mesh);
         engine.buildingPieces.delete(hitBuildingPieceId);

@@ -26,6 +26,7 @@ import {
   Share2,
   Link2,
   Server,
+  Lock,
 } from 'lucide-react';
 
 interface FortniteLobbyProps {
@@ -63,6 +64,11 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   const [publicRooms, setPublicRooms] = useState<Array<{ code: string; playerCount: number; gameState: string; isGlobal?: boolean }>>([]);
   const [party, setParty] = useState<PartyState>(() => ({ ...multiplayerClient.partyState }));
   const [partyError, setPartyError] = useState<string | null>(null);
+
+  const cleanPartyCode = (party.code || '').trim().toUpperCase();
+  const isGlobalServer = cleanPartyCode === 'ROYALE-GLOBAL' || cleanPartyCode.startsWith('GLOBAL');
+  const hasFriendParty = party.members.length > 1;
+  const isBattleRoyaleLocked = selectedMode === 'battle_royale' && !isGlobalServer && !hasFriendParty;
 
   const currentSkin =
     FORTNITE_SKINS.find((s) => s.id === profile.selectedSkin) || FORTNITE_SKINS[0];
@@ -218,6 +224,11 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   };
 
   const handlePlayClick = () => {
+    if (isBattleRoyaleLocked) {
+      fortniteAudio.playHitmarker(false, false);
+      setPartyError('Battle Royale requires joining the Global Server or having a friend party to drop in!');
+      return;
+    }
     setIsReady(true);
     fortniteAudio.playUiClick();
 
@@ -237,15 +248,19 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     icon: string;
     bg: string;
     onlineOnly?: boolean;
+    isLocked?: boolean;
   }[] = [
     {
       id: 'battle_royale',
       name: 'BATTLE ROYALE',
-      tag: 'PURE PVP • REAL PLAYERS ONLY',
-      desc: 'Real players only — zero AI bots! Drop into the island with friends or online players for pure Battle Royale PvP.',
-      icon: '🌐',
-      bg: 'from-amber-600/70 to-red-950/90',
+      tag: isBattleRoyaleLocked ? '🔒 SERVER/SQUAD REQUIRED' : isGlobalServer ? '🌐 GLOBAL SERVER READY' : '👥 SQUAD READY',
+      desc: isBattleRoyaleLocked
+        ? 'Locked: Pure multiplayer PvP! Connect to the Global Server or invite a friend to unlock drop.'
+        : 'Real players only — zero AI bots! Drop into the island with friends or global server players for pure Battle Royale PvP.',
+      icon: isBattleRoyaleLocked ? '🔒' : '🌐',
+      bg: isBattleRoyaleLocked ? 'from-rose-900/80 to-slate-900/90' : 'from-amber-600/90 to-rose-900/90',
       onlineOnly: true,
+      isLocked: isBattleRoyaleLocked,
     },
     {
       id: 'first_person_royale',
@@ -253,7 +268,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
       tag: '25-BOT BATTLEGROUND',
       desc: 'First-person realistic sights, weapon recoil, 25-bot drop & tactical urban combat.',
       icon: '🎯',
-      bg: 'from-cyan-600/60 to-slate-900/90',
+      bg: 'from-blue-600/70 to-slate-900/90',
     },
     {
       id: '1v1_build_fight',
@@ -261,7 +276,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
       tag: 'NO-BUILD • 600 HP',
       desc: 'Ruthless aim duel! Pure mechanical gunplay, 600 HP (300 HP + 300 Shield), and selectable AI bot hardness.',
       icon: '⚔️',
-      bg: 'from-purple-600/60 to-slate-900/90',
+      bg: 'from-indigo-600/70 to-slate-900/90',
     },
   ];
 
@@ -348,20 +363,20 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
 
   return (
     <div className="relative w-full h-screen bg-slate-950 text-white flex flex-col justify-between p-4 sm:p-6 overflow-hidden select-none">
-      {/* Background Atmosphere */}
-      <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-slate-900 to-cyan-950/60 pointer-events-none" />
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-cyan-500/10 rounded-full blur-[140px] pointer-events-none" />
+      {/* Background Atmosphere - Vibrant Deep Tones, Zero Neon Bloom */}
+      <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-slate-900 to-slate-950 pointer-events-none" />
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-900/15 rounded-full blur-[90px] pointer-events-none" />
 
       {/* TOP BAR: Logo, Party Code Pill, Currency & Locker */}
       <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
         {/* Brand Title with In-Game Player Icon */}
         <div className="flex items-center gap-3">
-          <PlayerCharacterAvatar skinId={profile.selectedSkin} size="md" className="ring-2 ring-cyan-400" />
+          <PlayerCharacterAvatar skinId={profile.selectedSkin} size="md" className="ring-2 ring-blue-500" />
           <div>
             <h1 className="font-display font-black text-xl sm:text-2xl tracking-wider text-white flex items-center gap-2">
-              SPHERE STRIKE <span className="text-xs px-2 py-0.5 rounded-md bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black">AI KNOCKOUT</span>
+              SPHERE STRIKE <span className="text-xs px-2.5 py-0.5 rounded-md bg-blue-600 text-white font-black">AI KNOCKOUT</span>
             </h1>
-            <p className="text-[10px] sm:text-[11px] text-cyan-400 font-bold tracking-widest uppercase">
+            <p className="text-[10px] sm:text-[11px] text-blue-300 font-bold tracking-widest uppercase">
               1-PERSON BATTLE ROYALE • AI KNOCKOUT DROP • S-TOKEN ARMORY
             </p>
           </div>
@@ -370,20 +385,20 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
         {/* Top Right: Party Code Pill, V-Bucks, Level & Locker */}
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Party Code Pill */}
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-purple-950/70 border border-purple-400/40 backdrop-blur-md shadow-lg shadow-purple-950/50">
-            <Radio className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-indigo-950/80 border border-indigo-500/40 backdrop-blur-md shadow-md">
+            <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-purple-300 font-bold">CODE:</span>
-              <span className="font-mono font-black text-sm text-yellow-300 tracking-wider">
+              <span className="text-[10px] text-indigo-300 font-bold">CODE:</span>
+              <span className="font-mono font-black text-sm text-amber-300 tracking-wider">
                 {party.code || 'CONNECTING...'}
               </span>
             </div>
             <button
               onClick={handleCopyCode}
               title="Copy Party Code"
-              className="p-1 rounded-lg bg-purple-800/60 hover:bg-purple-700 text-purple-200 transition-all ml-1"
+              className="p-1 rounded-lg bg-indigo-800/80 hover:bg-indigo-700 text-indigo-200 transition-all ml-1 cursor-pointer"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           </div>
 
@@ -391,27 +406,27 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           <div
             onClick={onOpenShop}
             title="Click to Open S-Token Shop & Armory"
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-amber-950/60 border border-amber-400/50 backdrop-blur-md cursor-pointer hover:bg-amber-900/60 transition-all shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-amber-950/70 border border-amber-500/50 backdrop-blur-md cursor-pointer hover:bg-amber-900/80 transition-all shadow-md"
           >
             <span className="text-amber-400 font-black text-sm">🅢</span>
             <div className="flex flex-col">
-              <span className="text-[8px] text-amber-300/80 font-bold uppercase leading-tight">S-TOKENS</span>
-              <span className="font-mono font-black text-xs sm:text-sm text-yellow-300 leading-none">
+              <span className="text-[8px] text-amber-300/90 font-bold uppercase leading-tight">S-TOKENS</span>
+              <span className="font-mono font-black text-xs sm:text-sm text-amber-300 leading-none">
                 {profile.vbucks.toLocaleString()}
               </span>
             </div>
           </div>
 
           {/* Level */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-black/60 border border-white/10 backdrop-blur-md">
-            <Crown className="w-4 h-4 text-cyan-400" />
-            <span className="font-mono font-black text-xs sm:text-sm text-cyan-300">LVL {profile.level}</span>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-900/90 border border-white/15 backdrop-blur-md shadow-md">
+            <Crown className="w-4 h-4 text-amber-400" />
+            <span className="font-mono font-black text-xs sm:text-sm text-white">LVL {profile.level}</span>
           </div>
 
           {/* S-Token Shop & Armory Button */}
           <button
             onClick={onOpenShop}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-display font-black text-xs sm:text-sm transition-all shadow-[0_0_20px_rgba(245,158,11,0.4)] active:scale-95 cursor-pointer"
+            className="flex items-center gap-2 px-4 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-display font-black text-xs sm:text-sm transition-all shadow-md shadow-amber-950/40 active:scale-95 cursor-pointer"
           >
             <span className="text-base leading-none">⚡</span>
             <span>S-TOKEN SHOP</span>
@@ -421,12 +436,12 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           <button
             onClick={toggleMusic}
             title={isMusicPlaying ? 'Mute Lobby Music' : 'Play Lobby Music'}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/15 font-bold text-xs text-white transition-all shadow-lg"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-white/15 font-bold text-xs text-white transition-all shadow-md cursor-pointer"
           >
             {isMusicPlaying ? (
               <>
-                <Volume2 className="w-4 h-4 text-green-400 animate-pulse" />
-                <span className="text-[11px] text-green-300 font-mono">MUSIC ON</span>
+                <Volume2 className="w-4 h-4 text-emerald-400" />
+                <span className="text-[11px] text-emerald-300 font-mono">MUSIC ON</span>
               </>
             ) : (
               <>
@@ -439,18 +454,18 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           {/* Locker & Career */}
           <button
             onClick={onOpenLocker}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/15 font-bold text-xs sm:text-sm text-white transition-all shadow-lg"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-white/15 font-bold text-xs sm:text-sm text-white transition-all shadow-md cursor-pointer"
           >
-            <Sparkles className="w-4 h-4 text-cyan-400" />
+            <Sparkles className="w-4 h-4 text-blue-400" />
             <span>LOCKER</span>
           </button>
 
           {/* Game Settings & Performance */}
           <button
             onClick={onOpenSettings}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-cyan-600/80 hover:bg-cyan-500 border border-cyan-400/50 font-bold text-xs sm:text-sm text-white transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] active:scale-95"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-white/20 font-bold text-xs sm:text-sm text-white transition-all shadow-md active:scale-95 cursor-pointer"
           >
-            <Settings className="w-4 h-4 text-white animate-spin-slow" />
+            <Settings className="w-4 h-4 text-white" />
             <span>SETTINGS</span>
           </button>
         </div>
@@ -473,18 +488,26 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                   }}
                   className={`cursor-pointer p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
                     isSelected
-                      ? 'border-cyan-400 bg-gradient-to-r ' + mode.bg + ' ring-2 ring-cyan-400 shadow-xl scale-[1.01]'
-                      : 'border-white/10 bg-slate-900/60 hover:bg-slate-800/80 hover:border-white/20'
+                      ? mode.isLocked
+                        ? 'border-rose-500 bg-gradient-to-r ' + mode.bg + ' ring-2 ring-rose-500/70 shadow-lg scale-[1.01]'
+                        : 'border-amber-400 bg-gradient-to-r ' + mode.bg + ' ring-2 ring-amber-500/70 shadow-lg scale-[1.01]'
+                      : 'border-white/10 bg-slate-900/70 hover:bg-slate-800/80 hover:border-white/20'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-black/40 flex items-center justify-center text-xl shadow-inner">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shadow-inner ${
+                      mode.isLocked ? 'bg-rose-950/60 text-rose-300' : 'bg-black/50 text-white'
+                    }`}>
                       {mode.icon}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <h4 className="font-display font-black text-sm text-white">{mode.name}</h4>
-                        <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[9px] font-black font-mono">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-black font-mono ${
+                          mode.isLocked
+                            ? 'bg-rose-950 text-rose-200 border border-rose-600/50'
+                            : 'bg-slate-800 text-amber-300 border border-amber-500/40'
+                        }`}>
                           {mode.tag}
                         </span>
                       </div>
@@ -600,18 +623,18 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
         {/* Center: Character Showcase Podium */}
         <div className="flex flex-col items-center justify-center">
           <div className="relative flex flex-col items-center">
-            <div className="absolute -bottom-8 w-60 h-14 rounded-full bg-cyan-500/20 border border-cyan-400/40 blur-sm transform rotate-x-60" />
-            <div className="absolute -bottom-6 w-44 h-8 rounded-full bg-cyan-400/30 blur-md" />
+            <div className="absolute -bottom-8 w-60 h-14 rounded-full bg-blue-900/30 border border-blue-500/40 blur-sm transform rotate-x-60" />
+            <div className="absolute -bottom-6 w-44 h-8 rounded-full bg-blue-600/20 blur-md" />
 
             {/* Avatar - What you look like in the game */}
-            <div className="relative z-10 w-40 h-40 sm:w-44 sm:h-44 rounded-3xl bg-gradient-to-br from-cyan-900/40 to-slate-900 border-2 border-cyan-400/50 flex items-center justify-center shadow-2xl overflow-hidden group">
+            <div className="relative z-10 w-40 h-40 sm:w-44 sm:h-44 rounded-3xl bg-gradient-to-br from-blue-950/60 to-slate-900 border-2 border-blue-500/50 flex items-center justify-center shadow-2xl overflow-hidden group">
               <PlayerCharacterAvatar skinId={currentSkin.id} size="xl" className="w-full h-full border-none rounded-none" />
             </div>
 
             {/* Name Tag */}
-            <div className="relative z-10 mt-3 px-4 py-1.5 rounded-2xl bg-black/70 border border-white/20 backdrop-blur-md flex flex-col items-center">
+            <div className="relative z-10 mt-3 px-4 py-1.5 rounded-2xl bg-black/80 border border-white/20 backdrop-blur-md flex flex-col items-center shadow-md">
               <span className="font-display font-black text-base text-white">{currentSkin.name}</span>
-              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest">
+              <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">
                 {currentSkin.rarity} OUTFIT
               </span>
             </div>
@@ -623,7 +646,9 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           {/* Party Hub Panel */}
           <div className={`p-4 rounded-3xl backdrop-blur-md flex flex-col gap-3 shadow-2xl transition-all ${
             selectedMode === 'battle_royale'
-              ? 'bg-slate-900/90 border-2 border-amber-500/60 shadow-[0_0_30px_rgba(245,158,11,0.2)]'
+              ? isBattleRoyaleLocked
+                ? 'bg-slate-900/95 border-2 border-rose-600/70 shadow-xl'
+                : 'bg-slate-900/95 border-2 border-emerald-500/70 shadow-xl'
               : 'bg-slate-900/85 border border-white/15'
           }`}>
             {/* Header with Online Status */}
@@ -639,11 +664,44 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   ONLINE • READY
                 </span>
-                <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono text-[10px] font-bold border border-purple-500/30">
+                <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono text-[10px] font-bold border border-indigo-500/30">
                   {party.members.length} / 16
                 </span>
               </div>
             </div>
+
+            {/* Battle Royale Specific Eligibility Banner inside Party Hub */}
+            {selectedMode === 'battle_royale' && (
+              isBattleRoyaleLocked ? (
+                <div className="p-3 rounded-2xl bg-rose-950/90 border border-rose-600/70 text-rose-100 flex flex-col gap-2 shadow-md">
+                  <div className="flex items-center gap-2 text-rose-200 font-black text-xs">
+                    <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>MULTIPLAYER DROP RESTRICTION</span>
+                  </div>
+                  <p className="text-[11px] text-rose-200/90 leading-snug font-medium">
+                    Battle Royale requires being in the <strong>Global Server</strong> or having <strong>2+ friends</strong> in your party.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleJoinGlobalRoom}
+                    className="w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>CONNECT TO GLOBAL SERVER</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-200 text-xs font-bold flex items-center justify-between shadow-md">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      {isGlobalServer ? 'Global Server Active • PvP Ready' : `Party of ${party.members.length} Ready`}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-300 font-bold uppercase">UNLOCKED</span>
+                </div>
+              )
+            )}
 
             {/* Active Room Code Box */}
             <div className="p-3 rounded-2xl bg-black/60 border border-white/10 flex flex-col gap-2">
@@ -788,8 +846,8 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           </div>
 
           {/* Gameplay Tuning Highlights */}
-          <div className="p-3 rounded-2xl bg-black/40 border border-white/10 flex flex-col gap-1 text-[11px] text-slate-300">
-            <span className="font-bold text-white text-[10px] uppercase tracking-wider text-cyan-300">
+          <div className="p-3 rounded-2xl bg-black/50 border border-white/10 flex flex-col gap-1 text-[11px] text-slate-300 shadow-md">
+            <span className="font-bold text-white text-[10px] uppercase tracking-wider text-blue-400">
               ⚡ GAMEPLAY ENHANCEMENTS:
             </span>
             <div className="grid grid-cols-2 gap-1 text-[10px]">
@@ -802,33 +860,105 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
         </div>
       </div>
 
-      {/* BOTTOM ACTION: Controls Guide & Play Button */}
-      <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 pt-3 border-t border-white/10">
-        <div className="text-xs text-slate-400 text-center sm:text-left">
-          🖱️ Click screen to lock mouse. Controls: <strong className="text-cyan-400 font-mono">[W,A,S,D]</strong> Move •{' '}
-          <strong className="text-cyan-400 font-mono">[Shift]</strong> Fast Sprint •{' '}
-          <strong className="text-amber-400 font-mono">[Q,F,R,T]</strong> Build •{' '}
-          <strong className="text-cyan-400 font-mono">[V]</strong> 1st/3rd Person
-        </div>
+      {/* BOTTOM ACTION: Battle Royale Gate Status & Play Button */}
+      <div className="relative z-10 flex flex-col gap-3 pt-3 border-t border-white/10">
+        {/* Battle Royale Gate Prompt when in Battle Royale mode */}
+        {selectedMode === 'battle_royale' && (
+          isBattleRoyaleLocked ? (
+            <div className="flex flex-col md:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl bg-rose-950/90 border-2 border-rose-600/80 text-white shadow-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-600/30 border border-rose-500/50 flex items-center justify-center shrink-0">
+                  <Lock className="w-5 h-5 text-rose-300" />
+                </div>
+                <div>
+                  <h4 className="font-display font-black text-sm text-white flex items-center gap-2">
+                    BATTLE ROYALE LOCKED
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-rose-900 text-rose-200 border border-rose-500/40">
+                      GLOBAL SERVER OR PARTY REQUIRED
+                    </span>
+                  </h4>
+                  <p className="text-xs text-rose-200/90 font-medium">
+                    Battle Royale is pure PvP! Join the public global server or invite friends to your squad to drop in together.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={handleJoinGlobalRoom}
+                  className="flex-1 md:flex-none px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-black text-xs flex items-center justify-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+                >
+                  <Globe className="w-4 h-4" />
+                  <span>JOIN GLOBAL SERVER</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="flex-1 md:flex-none px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-display font-black text-xs flex items-center justify-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+                >
+                  {copiedLink ? <Check className="w-4 h-4 text-emerald-200" /> : <Link2 className="w-4 h-4 text-blue-200" />}
+                  <span>{copiedLink ? 'LINK COPIED!' : 'INVITE FRIENDS'}</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-200 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-display font-black text-xs text-white">
+                  {isGlobalServer ? 'CONNECTED TO GLOBAL SERVER' : `FRIEND PARTY READY (${party.members.length} PLAYERS)`}
+                </span>
+                <span className="text-xs text-emerald-300">· Ready for Battle Royale Drop</span>
+              </div>
+              <span className="text-[10px] font-mono font-bold text-emerald-300 uppercase">
+                {isGlobalServer ? 'PUBLIC MATCHMAKING' : 'PARTY MATCH'}
+              </span>
+            </div>
+          )
+        )}
 
-        <button
-          onClick={handlePlayClick}
-          disabled={isReady}
-          className="w-full sm:w-auto px-12 py-4 rounded-3xl font-display font-black text-xl tracking-wider transform -skew-x-6 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-slate-950 shadow-[0_0_35px_rgba(245,158,11,0.6)] disabled:opacity-75 cursor-pointer"
-        >
-          <Play className="w-6 h-6 fill-current" />
-          <span>
-            {isReady
-              ? 'LAUNCHING MATCH...'
-              : selectedMode === 'battle_royale' && party.members.length > 1
-              ? `DROP TOGETHER (${party.members.length} PLAYERS)`
-              : selectedMode === 'battle_royale'
-              ? 'DROP INTO BATTLE ROYALE'
-              : party.members.length > 1
-              ? `READY UP SQUAD (${party.members.length})`
-              : 'READY UP (PLAY)'}
-          </span>
-        </button>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-xs text-slate-400 text-center sm:text-left">
+            🖱️ Click screen to lock mouse. Controls: <strong className="text-blue-400 font-mono">[W,A,S,D]</strong> Move •{' '}
+            <strong className="text-blue-400 font-mono">[Shift]</strong> Fast Sprint •{' '}
+            <strong className="text-amber-400 font-mono">[Q,F,R,T]</strong> Build •{' '}
+            <strong className="text-blue-400 font-mono">[V]</strong> 1st/3rd Person
+          </div>
+
+          <button
+            onClick={handlePlayClick}
+            disabled={isReady || isBattleRoyaleLocked}
+            className={`w-full sm:w-auto px-12 py-4 rounded-3xl font-display font-black text-xl tracking-wider transform -skew-x-6 transition-all flex items-center justify-center gap-3 ${
+              isBattleRoyaleLocked
+                ? 'bg-slate-800/90 border-2 border-rose-600/60 text-rose-300/80 cursor-not-allowed shadow-none'
+                : 'hover:scale-105 active:scale-95 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-xl shadow-amber-950/60 cursor-pointer'
+            }`}
+          >
+            {isBattleRoyaleLocked ? (
+              <>
+                <Lock className="w-6 h-6 text-rose-400" />
+                <span>JOIN GLOBAL OR PARTY TO DROP</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-6 h-6 fill-current" />
+                <span>
+                  {isReady
+                    ? 'LAUNCHING MATCH...'
+                    : selectedMode === 'battle_royale' && isGlobalServer
+                    ? 'DROP INTO GLOBAL SERVER'
+                    : selectedMode === 'battle_royale' && party.members.length > 1
+                    ? `DROP TOGETHER (${party.members.length} PLAYERS)`
+                    : selectedMode === 'battle_royale'
+                    ? 'DROP INTO BATTLE ROYALE'
+                    : party.members.length > 1
+                    ? `READY UP SQUAD (${party.members.length})`
+                    : 'READY UP (PLAY)'}
+                </span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

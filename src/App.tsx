@@ -259,6 +259,17 @@ export default function App() {
 
   // Start Battle Royale Match
   const handleStartMatch = useCallback(() => {
+    // Hard check: Battle Royale requires being in a global server or having a friend party
+    if (selectedMode === 'battle_royale') {
+      const partyCode = (multiplayerClient.partyState.code || '').trim().toUpperCase();
+      const isGlobal = partyCode === 'ROYALE-GLOBAL' || partyCode.startsWith('GLOBAL');
+      const hasSquad = multiplayerClient.partyState.members.length > 1;
+      if (!isGlobal && !hasSquad) {
+        console.warn('Battle Royale drop is restricted: player must be in a global server or friend party.');
+        return;
+      }
+    }
+
     fortniteAudio.startGameMusic();
     setGameState('playing');
     setHealth(250);
