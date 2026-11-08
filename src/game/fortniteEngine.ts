@@ -65,6 +65,7 @@ import {
 import { SpatialColliderGrid } from './spatialGrid';
 import { fortniteAudio } from '../utils/audio';
 import { multiplayerClient } from '../utils/multiplayer';
+import { initNetwork } from '../utils/p2pNetwork';
 
 import { setupLightingImpl, setupGliderImpl, setupStormImpl, setupPlayerRigsImpl, setupScopeVisualizerImpl, spawnBotsImpl, setupMultiplayerImpl } from './fortniteEngineSetup';
 import { updatePlayersLeftCountImpl, updateDuelStateImpl, handleBattleRoyaleLocalDeathImpl, executeRespawnImpl, damageRemotePlayerImpl, handleRemotePlayerLethalImpl, applyDamageFromRemoteImpl, updateNetworkSyncImpl } from './fortniteEngineDuel';
@@ -602,6 +603,7 @@ export class FortniteEngine {
 
     // Setup Multiplayer Listeners
     this.setupMultiplayer();
+    initNetwork(this.scene);
 
     // Initial Callback Sync
     this.callbacks.onHealthChange(this.health, this.shield);

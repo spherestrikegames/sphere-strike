@@ -1,6 +1,7 @@
 // Main requestAnimationFrame simulation loop and interaction prompts.
 import * as THREE from 'three';
 import type { FortniteEngine } from './fortniteEngine';
+import { updateNetwork, sendPlayerTransform } from '../utils/p2pNetwork';
 
 
 export function loopImpl(engine: FortniteEngine) {
@@ -59,6 +60,8 @@ export function loopImpl(engine: FortniteEngine) {
     engine.updateScopeTrajectory();
     engine.updateInteractionPrompts();
     engine.updateNetworkSync(now);
+    updateNetwork();
+    sendPlayerTransform(engine.playerPos.x, engine.playerPos.y, engine.playerPos.z, engine.playerRotY);
 
     // Auto fire / continuous swing for AR, SMG, and Pickaxe if mouse held
     const wep = engine.getCurrentWeapon();
