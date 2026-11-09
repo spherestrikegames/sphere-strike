@@ -518,7 +518,7 @@ export default function App() {
   }, [gameState]);
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-slate-950 select-none">
+    <div className="fixed inset-0 w-full h-[100dvh] overflow-hidden bg-slate-950 select-none">
       {/* 3D WebGL Canvas */}
       <canvas
         ref={canvasRef}

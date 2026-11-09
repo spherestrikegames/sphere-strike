@@ -555,7 +555,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
       </div>
 
       {/* CENTER: 3-Column Layout: Mode Carousel, Character Podium, Party Hub */}
-      <div className="relative z-10 flex-1 grid grid-cols-1 lg:grid-cols-3 items-center gap-6 py-3">
+      <div className="relative z-10 flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 items-center gap-6 py-3 pb-36 overflow-y-auto lg:overflow-visible">
         {/* Left: Playlist Selection */}
         <div className="flex flex-col gap-2.5 max-h-[60vh] overflow-y-auto pr-1">
           <span className="text-xs font-black tracking-widest text-slate-400 uppercase">SELECT PLAYLIST</span>
@@ -994,110 +994,85 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
         </div>
       </div>
 
-      {/* BOTTOM ACTION: Battle Royale Gate Status & Play Button */}
-      <div className="relative z-10 flex flex-col gap-3 pt-3 border-t border-white/10">
-        {/* Battle Royale Gate Prompt when in Battle Royale mode */}
-        {selectedMode === 'battle_royale' && (
-          isBattleRoyaleLocked ? (
-            <div className="flex flex-col md:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl bg-rose-950/90 border-2 border-rose-600/80 text-white shadow-xl">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-rose-600/30 border border-rose-500/50 flex items-center justify-center shrink-0">
-                  <Lock className="w-5 h-5 text-rose-300" />
-                </div>
-                <div>
-                  <h4 className="font-display font-black text-sm text-white flex items-center gap-2">
-                    BATTLE ROYALE LOCKED
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-rose-900 text-rose-200 border border-rose-500/40">
-                      GLOBAL SERVER OR PARTY REQUIRED
-                    </span>
-                  </h4>
-                  <p className="text-xs text-rose-200/90 font-medium">
-                    Battle Royale is pure PvP! Join the public global server or invite friends to your squad to drop in together.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
-                <button
-                  type="button"
-                  onClick={handleJoinGlobalRoom}
-                  className="flex-1 md:flex-none px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-black text-xs flex items-center justify-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
-                >
-                  <Globe className="w-4 h-4" />
-                  <span>JOIN GLOBAL SERVER</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  className="flex-1 md:flex-none px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-display font-black text-xs flex items-center justify-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
-                >
-                  {copiedLink ? <Check className="w-4 h-4 text-emerald-200" /> : <Link2 className="w-4 h-4 text-blue-200" />}
-                  <span>{copiedLink ? 'LINK COPIED!' : 'INVITE FRIENDS'}</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-200 shadow-md">
-              <div className="flex items-center gap-2.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="font-display font-black text-xs text-white">
-                  {isGlobalServer ? 'CONNECTED TO GLOBAL SERVER' : `FRIEND PARTY READY (${party.members.length} PLAYERS)`}
-                </span>
-                <span className="text-xs text-emerald-300">· Ready for Battle Royale Drop</span>
-              </div>
-              <span className="text-[10px] font-mono font-bold text-emerald-300 uppercase">
-                {isGlobalServer ? 'PUBLIC MATCHMAKING' : 'PARTY MATCH'}
-              </span>
-            </div>
-          )
+      {/* 1. BRING BUTTON TO ABSOLUTE FRONT (Z-Index 99999, Fixed Centering in Lower-Third) */}
+      <div
+        className="fixed z-[99999] pointer-events-auto flex flex-col items-center gap-2"
+        style={{
+          position: 'fixed',
+          left: '50%',
+          bottom: 'calc(clamp(24px, 8dvh, 60px) + env(safe-area-inset-bottom))',
+          transform: 'translateX(-50%)',
+          zIndex: 99999,
+          pointerEvents: 'auto',
+        }}
+      >
+        {/* Battle Royale Locked Notice if applicable */}
+        {selectedMode === 'battle_royale' && isBattleRoyaleLocked && (
+          <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-2xl bg-rose-950/95 border-2 border-rose-500/80 text-rose-100 text-xs font-bold shadow-2xl backdrop-blur-xl animate-pulse">
+            <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>Connect to Global Server or Squad to Drop</span>
+            <button
+              type="button"
+              onClick={handleJoinGlobalRoom}
+              className="px-2.5 py-1 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-[10px] font-black cursor-pointer shadow-md transition-all active:scale-95"
+            >
+              JOIN GLOBAL
+            </button>
+          </div>
         )}
 
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-xs text-slate-400 text-center sm:text-left">
-            🖱️ Controls: <strong className="text-blue-400 font-mono">[W,A,S,D]</strong> Move •{' '}
-            <strong className="text-cyan-400 font-mono">[X]</strong> Speed Boost •{' '}
-            <strong className="text-purple-400 font-mono">[Z]</strong> Kinetic Slam •{' '}
-            <strong className="text-blue-400 font-mono">[Shift]</strong> Sprint •{' '}
-            <strong className="text-amber-400 font-mono">[Q,F,R,T]</strong> Build •{' '}
-            <strong className="text-blue-400 font-mono">[V]</strong> 1st/3rd Person
-          </div>
+        {/* PROMINENT FORTNITE READY UP / PLAY BUTTON */}
+        <button
+          onClick={handlePlayClick}
+          disabled={isReady || isBattleRoyaleLocked}
+          style={{
+            minWidth: 'clamp(200px, 30vw, 340px)',
+            height: 'clamp(52px, 7dvh, 68px)',
+            pointerEvents: 'auto',
+          }}
+          className={`relative group px-8 rounded-[clamp(16px,2.2vw,24px)] font-display font-black text-lg sm:text-xl tracking-wider transition-all duration-200 flex items-center justify-center gap-3 overflow-hidden select-none cursor-pointer ${
+            isBattleRoyaleLocked
+              ? 'bg-slate-800/90 border-2 border-rose-600/60 text-rose-300/80 cursor-not-allowed shadow-none'
+              : 'bg-[#ffe600] text-black hover:scale-105 active:scale-95 shadow-[0_10px_40px_rgba(255,230,0,0.65),0_0_24px_rgba(255,230,0,0.45)] border border-white/60 ring-2 ring-yellow-300/50'
+          }`}
+        >
+          {/* Top Liquid Specular Shine */}
+          {!isBattleRoyaleLocked && (
+            <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/70 via-white/20 to-transparent pointer-events-none rounded-t-[clamp(16px,2.2vw,24px)]" />
+          )}
 
-          <button
-            onClick={handlePlayClick}
-            disabled={isReady || isBattleRoyaleLocked}
-            className={`w-full sm:w-auto px-12 py-4 rounded-3xl font-display font-black text-xl tracking-wider transition-all flex items-center justify-center gap-3 relative overflow-hidden ${
-              isBattleRoyaleLocked
-                ? 'bg-slate-800/90 border-2 border-rose-600/60 text-rose-300/80 cursor-not-allowed shadow-none'
-                : 'hover:scale-105 active:scale-95 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-slate-950 shadow-2xl shadow-amber-500/30 cursor-pointer border border-white/40 ring-1 ring-white/50'
-            }`}
-          >
-            {/* Top liquid specular shine */}
-            {!isBattleRoyaleLocked && (
-              <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/45 to-transparent pointer-events-none rounded-t-3xl" />
-            )}
-            {isBattleRoyaleLocked ? (
-              <>
-                <Lock className="w-6 h-6 text-rose-400" />
-                <span>JOIN GLOBAL OR PARTY TO DROP</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-6 h-6 fill-current" />
-                <span>
-                  {isReady
-                    ? 'LAUNCHING MATCH...'
-                    : selectedMode === 'battle_royale' && isGlobalServer
-                    ? 'DROP INTO GLOBAL SERVER'
-                    : selectedMode === 'battle_royale' && party.members.length > 1
-                    ? `DROP TOGETHER (${party.members.length} PLAYERS)`
-                    : selectedMode === 'battle_royale'
-                    ? 'DROP INTO BATTLE ROYALE'
-                    : party.members.length > 1
-                    ? `READY UP SQUAD (${party.members.length})`
-                    : 'READY UP (PLAY)'}
-                </span>
-              </>
-            )}
-          </button>
+          {isBattleRoyaleLocked ? (
+            <>
+              <Lock className="w-5 h-5 text-rose-400 shrink-0" />
+              <span className="text-sm sm:text-base font-black">LOCKED • SQUAD REQUIRED</span>
+            </>
+          ) : (
+            <>
+              <Play className="w-5 h-5 sm:w-6 sm:h-6 fill-black text-black shrink-0 group-hover:scale-110 transition-transform" />
+              <span className="text-black font-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]">
+                {isReady
+                  ? 'LAUNCHING MATCH...'
+                  : selectedMode === 'battle_royale' && isGlobalServer
+                  ? 'DROP GLOBAL SERVER'
+                  : selectedMode === 'battle_royale' && party.members.length > 1
+                  ? `DROP TOGETHER (${party.members.length})`
+                  : selectedMode === 'battle_royale'
+                  ? 'DROP BATTLE ROYALE'
+                  : party.members.length > 1
+                  ? `READY SQUAD (${party.members.length})`
+                  : 'READY UP (PLAY)'}
+              </span>
+            </>
+          )}
+        </button>
+
+        {/* Minimal Controls Hint docked cleanly under the button */}
+        <div className="pointer-events-none text-[10px] sm:text-[11px] text-slate-300/90 bg-slate-950/80 px-3.5 py-0.5 rounded-full backdrop-blur-md border border-white/15 shadow-lg whitespace-nowrap">
+          🖱️ <strong className="text-blue-400 font-mono">[W,A,S,D]</strong> Move •{' '}
+          <strong className="text-cyan-400 font-mono">[X]</strong> Boost •{' '}
+          <strong className="text-purple-400 font-mono">[Z]</strong> Slam •{' '}
+          <strong className="text-amber-400 font-mono">[Q,F,R,T]</strong> Build •{' '}
+          <strong className="text-blue-400 font-mono">[V]</strong> View
         </div>
       </div>
     </div>
