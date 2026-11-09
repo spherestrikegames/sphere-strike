@@ -369,7 +369,13 @@ export interface PlayerProfile {
 
 export type GameMode = 'battle_royale' | 'first_person_royale' | 'zero_build' | '1v1_build_fight';
 
-export type BattlegroundMap = 'island_2v2' | 'tilted_skyscrapers' | 'pleasant_valley';
+export type BattlegroundMap =
+  | 'suburban_valley'
+  | 'financial_district'
+  | 'neocity_heights'
+  | 'island_2v2'
+  | 'tilted_skyscrapers'
+  | 'pleasant_valley';
 
 export interface PartyMember {
   id: string;

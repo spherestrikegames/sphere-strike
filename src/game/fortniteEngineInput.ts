@@ -42,6 +42,7 @@ export function destroyImpl(engine: FortniteEngine) {
     engine.scene.remove(remote.rig.root);
   }
   engine.remotePlayers.clear();
+  engine.mapManager?.disposeCurrentMap();
   multiplayerClient.setGameRunning(false);
   engine.renderer.dispose();
 }
@@ -51,10 +52,16 @@ export function onContextMenuImpl(engine: FortniteEngine, e: MouseEvent) {
 }
 
 export function onWindowResizeImpl(engine: FortniteEngine) {
-  if (!engine.canvas) return;
-  engine.camera.aspect = engine.canvas.clientWidth / engine.canvas.clientHeight;
+  if (!engine.canvas || !engine.renderer || !engine.camera) return;
+
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+
+  engine.camera.aspect = width / height;
   engine.camera.updateProjectionMatrix();
-  engine.renderer.setSize(engine.canvas.clientWidth, engine.canvas.clientHeight);
+
+  engine.renderer.setSize(width, height);
+  engine.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 }
 
 export function onKeyDownImpl(engine: FortniteEngine, e: KeyboardEvent) {
@@ -114,6 +121,47 @@ export function onKeyDownImpl(engine: FortniteEngine, e: KeyboardEvent) {
   // Car Honk ('H')
   if (e.code === 'KeyH' && engine.activeVehicle) {
     fortniteAudio.playCarHonk();
+  }
+
+  // Speed Boost Overdrive Ability ('KeyX')
+  if (e.code === 'KeyX' && !engine.activeVehicle && !engine.isSpeedBoosting && engine.speedBoostCooldown <= 0) {
+    engine.isSpeedBoosting = true;
+    engine.speedBoostTimer = engine.speedBoostDuration;
+    fortniteAudio.playNitroBoost?.();
+    engine.screenShake = 0.16;
+    engine.vfxSystem?.createSpecialAbilityBurst(
+      new THREE.Vector3(engine.playerPos.x, engine.playerPos.y + 0.6, engine.playerPos.z),
+      'dash'
+    );
+  }
+
+  // Kinetic Shockwave Slam Ability ('KeyZ')
+  if (e.code === 'KeyZ' && !engine.activeVehicle && engine.abilityKineticCooldown <= 0) {
+    engine.abilityKineticCooldown = 8.0;
+    fortniteAudio.playBuildResetShockwave();
+    engine.screenShake = 0.28;
+    engine.vfxSystem?.createSpecialAbilityBurst(
+      new THREE.Vector3(engine.playerPos.x, engine.playerPos.y + 0.1, engine.playerPos.z),
+      'kinetic_slam'
+    );
+
+    // Repel nearby bots with massive elastic shockwave impulse
+    for (let b = 0; b < engine.bots.length; b++) {
+      const bot = engine.bots[b];
+      if (!bot.isAlive) continue;
+      const dx = bot.x - engine.playerPos.x;
+      const dz = bot.z - engine.playerPos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 14.0 && dist > 0.1) {
+        const force = (14.0 - dist) * 2.2;
+        bot.vx += (dx / dist) * force;
+        bot.vz += (dz / dist) * force;
+        bot.vy += 8.0;
+        bot.isGrounded = false;
+        bot.health = Math.max(0, bot.health - Math.round(force * 3.5));
+        engine.addDamageNumber(`-${Math.round(force * 3.5)} SLAM ⚡`, '#00f0ff', false, false, bot.x, bot.y + 2.2, bot.z);
+      }
+    }
   }
 
   // Tactical Slide (Shift + C / Ctrl)

@@ -4,7 +4,7 @@ import { BotPlayer, TeamType } from '../types';
 import { WEAPON_REGISTRY, FORTNITE_SKINS, ISLAND_POIS } from '../data/fortniteData';
 import { createFirstPersonWeaponRig } from './fortniteWeapons';
 import { createPlacedBuildingMesh } from './fortniteBuilding';
-import { buildCharacterModel, createNameTagSprite } from './fortniteCharacter';
+import { buildCharacterModel, buildSphereCharacterRig, createNameTagSprite } from './fortniteCharacter';
 import { fortniteAudio } from '../utils/audio';
 import { multiplayerClient } from '../utils/multiplayer';
 import type { FortniteEngine } from './fortniteEngine';
@@ -12,17 +12,19 @@ import { getBotDifficultyConfig } from './fortniteEngine';
 
 
 export function setupLightingImpl(engine: FortniteEngine) {
-  engine.hemiLight = new THREE.HemisphereLight(0xffffff, 0x445566, 0.95);
+  // Dual-color HemisphereLight (crisp ice-blue sky tone, deep slate-earth ground)
+  engine.hemiLight = new THREE.HemisphereLight(0xbfe3ff, 0x1e293b, 0.95);
   engine.hemiLight.position.set(0, 250, 0);
   engine.scene.add(engine.hemiLight);
 
   const hasShadows = engine.profile.settings.shadows ?? false;
-  engine.sunLight = new THREE.DirectionalLight(0xfffaed, 1.35);
+  // High-intensity directional key light for sharp rim highlights & specular glare
+  engine.sunLight = new THREE.DirectionalLight(0xffffff, 2.4);
   engine.sunLight.position.set(130, 260, 100);
   engine.sunLight.castShadow = hasShadows;
-  engine.sunLight.shadow.mapSize.width = hasShadows ? 1024 : 512;
-  engine.sunLight.shadow.mapSize.height = hasShadows ? 1024 : 512;
-  engine.sunLight.shadow.bias = -0.0005;
+  engine.sunLight.shadow.mapSize.width = hasShadows ? 2048 : 512;
+  engine.sunLight.shadow.mapSize.height = hasShadows ? 2048 : 512;
+  engine.sunLight.shadow.bias = -0.0003;
   engine.sunLight.shadow.normalBias = 0.02;
   engine.sunLight.shadow.camera.near = 15;
   engine.sunLight.shadow.camera.far = 480;
@@ -32,6 +34,9 @@ export function setupLightingImpl(engine: FortniteEngine) {
   engine.sunLight.shadow.camera.top = d;
   engine.sunLight.shadow.camera.bottom = -d;
   engine.scene.add(engine.sunLight);
+
+  // Soft Exponential Horizon Fog matching sky-blue
+  engine.scene.fog = new THREE.FogExp2(0x87ceeb, 0.0075);
 }
 
 export function setupGliderImpl(engine: FortniteEngine) {
@@ -66,7 +71,7 @@ export function setupStormImpl(engine: FortniteEngine) {
   const stormGeo = new THREE.CylinderGeometry(
     engine.storm.currentRadius,
     engine.storm.currentRadius,
-    200,
+    220,
     48,
     1,
     true
@@ -92,12 +97,11 @@ export function setupPlayerRigsImpl(engine: FortniteEngine) {
   engine.camera.add(engine.fpsRig);
   engine.scene.add(engine.camera);
 
-  // 3rd Person Character Rig
-  engine.thirdPersonRig = buildCharacterModel(
-    engine.profile.selectedSkin || 'jonesy',
-    type,
-    rarity
-  );
+  // 3rd Person Character Rig (Uses stylized physical sphere rig in 2v2 Sphere battlegrounds)
+  const isSphereBattleground = engine.selectedMap === 'island_2v2' || engine.mode === '1v1_build_fight';
+  engine.thirdPersonRig = isSphereBattleground
+    ? buildSphereCharacterRig(engine.profile.selectedSkin || 'jonesy', type, rarity, 0x0a84ff)
+    : buildCharacterModel(engine.profile.selectedSkin || 'jonesy', type, rarity);
 
   // Attach Player Name Tag
   engine.playerNameTag = createNameTagSprite(
@@ -201,7 +205,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
 
     engine.bots.push(bot);
 
-    const rig = buildCharacterModel('renegade_raider', bot.weapon.type, bot.weapon.rarity);
+    const rig = buildSphereCharacterRig('renegade_raider', bot.weapon.type, bot.weapon.rarity, 0xef4444);
     rig.root.position.set(bot.x, bot.y, bot.z);
 
     const nameTag = createNameTagSprite(

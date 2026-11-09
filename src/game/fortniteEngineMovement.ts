@@ -7,7 +7,14 @@ import type { FortniteEngine } from './fortniteEngine';
 
 
 export function getGroundElevationAtImpl(engine: FortniteEngine, x: number, z: number, currentY: number): number {
-  let highestY = engine.mode === '1v1_build_fight' ? 0.0 : getTerrainHeight(x, z);
+  let highestY = 0.0;
+  if (engine.mode === '1v1_build_fight') {
+    highestY = 0.0;
+  } else if (engine.mapManager?.currentMapData) {
+    highestY = engine.mapManager.currentMapData.getElevation(x, z);
+  } else {
+    highestY = getTerrainHeight(x, z);
+  }
 
   // 1. Fast local query for player placed floors, ramps, and cones
   const nearbyPieces = engine.spatialGrid.queryBuildingPiecesNear(x, z, 3.5);
@@ -270,9 +277,25 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
     return;
   }
 
-  // 2. ON-GROUND FAST MOVEMENT WITH SOLID COLLISION
+  // 2. ON-GROUND FAST MOVEMENT WITH SOLID COLLISION & SPEED BOOST
   engine.isSprinting = engine.keys['ShiftLeft'] || engine.keys['ShiftRight'];
   engine.isCrouching = engine.keys['KeyC'] || engine.keys['ControlLeft'];
+
+  // Speed Boost Ability Timers & Cooldowns
+  if (engine.speedBoostCooldown > 0) {
+    engine.speedBoostCooldown = Math.max(0, engine.speedBoostCooldown - dt);
+  }
+  if (engine.abilityKineticCooldown > 0) {
+    engine.abilityKineticCooldown = Math.max(0, engine.abilityKineticCooldown - dt);
+  }
+
+  if (engine.isSpeedBoosting) {
+    engine.speedBoostTimer -= dt;
+    if (engine.speedBoostTimer <= 0) {
+      engine.isSpeedBoosting = false;
+      engine.speedBoostCooldown = 6.0;
+    }
+  }
 
   if (engine.isSliding) {
     engine.slideTimer -= dt;
@@ -281,7 +304,9 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
     }
   }
 
-  let moveSpeed = engine.isSliding
+  let moveSpeed = engine.isSpeedBoosting
+    ? 26.5 // High-velocity overdrive speed boost
+    : engine.isSliding
     ? 19.5
     : engine.isSprinting
     ? 16.5
@@ -304,6 +329,17 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
     moveDir.normalize();
     engine.playerVel.x = moveDir.x * moveSpeed;
     engine.playerVel.z = moveDir.z * moveSpeed;
+
+    // Emit vibrant speed boost jet flame and plasma orbs when boosting or fast-sprinting
+    if (engine.isSpeedBoosting || engine.isSliding) {
+      const boostTheme = engine.isSpeedBoosting ? 'overdrive' : 'nitro';
+      engine.vfxSystem?.createSpeedBoostTrail(
+        new THREE.Vector3(engine.playerPos.x, engine.playerPos.y + 0.6, engine.playerPos.z),
+        moveDir,
+        engine.isSpeedBoosting ? 1.8 : 1.2,
+        boostTheme
+      );
+    }
   } else {
     engine.playerVel.x *= 0.78;
     engine.playerVel.z *= 0.78;
@@ -311,7 +347,7 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
 
   if (engine.isGrounded && moveDir.lengthSq() > 0.01) {
     engine.footstepTimer += dt;
-    const stepInterval = engine.isSprinting ? 0.28 : engine.isCrouching ? 0.52 : 0.36;
+    const stepInterval = engine.isSpeedBoosting ? 0.18 : engine.isSprinting ? 0.28 : engine.isCrouching ? 0.52 : 0.36;
     if (engine.footstepTimer >= stepInterval) {
       engine.footstepTimer = 0;
       if (isPointInLake(engine.playerPos.x, engine.playerPos.z)) {
@@ -330,9 +366,15 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
   }
 
   if (engine.keys['Space'] && engine.isGrounded) {
-    engine.playerVel.y = 11.5;
+    engine.playerVel.y = engine.isSpeedBoosting ? 14.5 : 11.5;
     engine.isGrounded = false;
     fortniteAudio.playJump();
+    if (engine.isSpeedBoosting) {
+      engine.vfxSystem?.createSpecialAbilityBurst(
+        new THREE.Vector3(engine.playerPos.x, engine.playerPos.y + 0.2, engine.playerPos.z),
+        'dash'
+      );
+    }
   }
 
   engine.playerVel.y -= 26.0 * dt;
@@ -340,9 +382,76 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
   const nextX = engine.playerPos.x + engine.playerVel.x * dt;
   const nextZ = engine.playerPos.z + engine.playerVel.z * dt;
 
-  const resolved = engine.checkAndResolveSolidCollisions(nextX, nextZ, engine.playerPos.y);
-  engine.playerPos.x = resolved.x;
-  engine.playerPos.z = resolved.z;
+  // Realistic Sphere-on-Environment Collision Resolution with Dynamic Particle Bounces
+  const playerSphere = {
+    id: 'player_sphere',
+    pos: new THREE.Vector3(nextX, engine.playerPos.y, nextZ),
+    vel: engine.playerVel,
+    radius: engine.sphereRadius || 0.55,
+    mass: engine.sphereMass || 1.0,
+    restitution: engine.sphereRestitution || 0.85,
+    friction: engine.sphereFriction || 0.35,
+    isGrounded: engine.isGrounded,
+    isPlayer: true,
+  };
+
+  const nearbyStaticColliders = engine.spatialGrid.queryNear(nextX, nextZ, 4.5);
+  const currentGroundY = engine.getGroundElevationAt(nextX, nextZ, engine.playerPos.y);
+
+  if (engine.spherePhysicsEngine) {
+    engine.spherePhysicsEngine.resolveEnvironment(
+      playerSphere,
+      nearbyStaticColliders,
+      currentGroundY,
+      dt
+    );
+  }
+
+  // Multi-sphere collision: Sphere-on-Sphere physics with AI Bots & Remote Players
+  for (let b = 0; b < engine.bots.length; b++) {
+    const bot = engine.bots[b];
+    if (!bot.isAlive) continue;
+    const botSphere = {
+      id: bot.id,
+      pos: new THREE.Vector3(bot.x, bot.y + 0.6, bot.z),
+      vel: new THREE.Vector3(bot.vx || 0, bot.vy || 0, bot.vz || 0),
+      radius: 0.55,
+      mass: 1.0,
+      restitution: 0.88,
+      friction: 0.3,
+      isGrounded: bot.isGrounded,
+      name: bot.name,
+    };
+
+    if (engine.spherePhysicsEngine?.resolveSpherePair(playerSphere, botSphere)) {
+      bot.x = botSphere.pos.x;
+      bot.z = botSphere.pos.z;
+      bot.vx = botSphere.vel.x;
+      bot.vy = botSphere.vel.y;
+      bot.vz = botSphere.vel.z;
+      engine.screenShake = Math.max(engine.screenShake, 0.14);
+    }
+  }
+
+  // Sphere-on-Sphere with Remote Peer Players
+  for (const [peerId, remote] of engine.remotePlayers.entries()) {
+    const remoteSphere = {
+      id: peerId,
+      pos: new THREE.Vector3(remote.state.x, remote.state.y + 0.6, remote.state.z),
+      vel: new THREE.Vector3(0, 0, 0),
+      radius: 0.55,
+      mass: 1.2,
+      restitution: 0.88,
+      friction: 0.3,
+      isGrounded: true,
+    };
+    if (engine.spherePhysicsEngine?.resolveSpherePair(playerSphere, remoteSphere)) {
+      engine.screenShake = Math.max(engine.screenShake, 0.16);
+    }
+  }
+
+  engine.playerPos.x = playerSphere.pos.x;
+  engine.playerPos.z = playerSphere.pos.z;
   const prevFallY = engine.playerPos.y;
   engine.playerPos.y += engine.playerVel.y * dt;
 
@@ -484,10 +593,16 @@ export function updateCameraAndRigsImpl(engine: FortniteEngine, dt: number) {
       engine.fpsRig.rotation.set(engine.recoilRecoilRotX + swingRotX, 0, swingRotZ);
     }
   } else {
-    const dist = engine.isSkydiving ? 5.5 : 2.8;
-    const camOffset = new THREE.Vector3(0.7, 0.4, dist);
+    const isAim = engine.isAimingDownSights;
+    const baseOffset = isAim
+      ? new THREE.Vector3(0.7, 0.2, 1.8) // tighter right-shoulder ADS
+      : engine.isSkydiving
+      ? new THREE.Vector3(0.0, 0.6, 5.5) // skydiving center follow
+      : new THREE.Vector3(1.1, 0.35, 3.2); // +X right shoulder, +Y height, +Z distance
+    const camOffset = baseOffset.clone();
     camOffset.applyQuaternion(engine.camera.quaternion);
-    engine.camera.position.copy(engine.playerPos).add(new THREE.Vector3(0, eyeHeight, 0)).add(camOffset);
+    const targetCamPos = engine.playerPos.clone().add(new THREE.Vector3(0, eyeHeight, 0)).add(camOffset);
+    engine.camera.position.lerp(targetCamPos, Math.min(1.0, dt * 16));
 
     if (engine.thirdPersonRig) {
       engine.thirdPersonRig.root.position.copy(engine.playerPos);

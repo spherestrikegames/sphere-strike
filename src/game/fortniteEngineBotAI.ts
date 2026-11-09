@@ -358,22 +358,46 @@ export function update1v1BotImpl(engine: FortniteEngine, bot: BotPlayer, dt: num
     fortniteAudio.playJump();
   }
 
-  // 5. Apply velocities & collisions
+  // 5. Apply velocities & sphere-on-environment collisions
   bot.x += bot.vx * dt;
   bot.z += bot.vz * dt;
   bot.y += bot.vy * dt;
 
-  const resolved = engine.checkAndResolveSolidCollisions(bot.x, bot.z, bot.y, 0.48);
-  bot.x = resolved.x;
-  bot.z = resolved.z;
+  const botSphere = {
+    id: bot.id,
+    pos: new THREE.Vector3(bot.x, bot.y + 0.6, bot.z),
+    vel: new THREE.Vector3(bot.vx, bot.vy, bot.vz),
+    radius: 0.55,
+    mass: 1.0,
+    restitution: 0.88,
+    friction: 0.35,
+    isGrounded: bot.isGrounded,
+    name: bot.name,
+  };
 
+  const nearbyStatic = engine.spatialGrid.queryNear(bot.x, bot.z, 4.0);
   const groundElevation = engine.getGroundElevationAt(bot.x, bot.z, bot.y);
-  if (bot.y <= groundElevation) {
-    bot.y = groundElevation;
-    bot.vy = 0;
-    bot.isGrounded = true;
+
+  if (engine.spherePhysicsEngine) {
+    engine.spherePhysicsEngine.resolveEnvironment(botSphere, nearbyStatic, groundElevation, dt);
+    bot.x = botSphere.pos.x;
+    bot.z = botSphere.pos.z;
+    bot.y = botSphere.pos.y - 0.6;
+    bot.vx = botSphere.vel.x;
+    bot.vy = botSphere.vel.y;
+    bot.vz = botSphere.vel.z;
+    bot.isGrounded = botSphere.isGrounded;
   } else {
-    bot.isGrounded = false;
+    const resolved = engine.checkAndResolveSolidCollisions(bot.x, bot.z, bot.y, 0.48);
+    bot.x = resolved.x;
+    bot.z = resolved.z;
+    if (bot.y <= groundElevation) {
+      bot.y = groundElevation;
+      bot.vy = 0;
+      bot.isGrounded = true;
+    } else {
+      bot.isGrounded = false;
+    }
   }
 
   // Arena Boundary clamp

@@ -46,7 +46,7 @@ interface FortniteLobbyProps {
 export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   profile,
   selectedMode,
-  selectedMap = 'island_2v2',
+  selectedMap = 'suburban_valley',
   botDifficulty = 'pro',
   onSelectMode,
   onSelectMap,
@@ -64,6 +64,74 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   const [publicRooms, setPublicRooms] = useState<Array<{ code: string; playerCount: number; gameState: string; isGlobal?: boolean }>>([]);
   const [party, setParty] = useState<PartyState>(() => ({ ...multiplayerClient.partyState }));
   const [partyError, setPartyError] = useState<string | null>(null);
+
+  // Apple Tinted Liquid Glass P2P Room State
+  const [p2pCode, setP2pCode] = useState<string | null>(null);
+  const [p2pInput, setP2pInput] = useState<string>('');
+  const [p2pStatus, setP2pStatus] = useState<string>('P2P READY');
+  const [p2pConnected, setP2pConnected] = useState<boolean>(false);
+
+  const handleHostP2P = () => {
+    const PeerClass = (window as any).Peer;
+    if (!PeerClass) {
+      setP2pStatus('PeerJS loading...');
+      return;
+    }
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const code = Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const p = new PeerClass(code);
+    p.on('open', (id: string) => {
+      setP2pCode(id);
+      setP2pStatus(`Hosting [${id}]`);
+      setParty((prev) => ({ ...prev, code: id }));
+      multiplayerClient.connectWithCode(id, {
+        name: profile.name,
+        skinId: profile.selectedSkin,
+        level: profile.level,
+      });
+    });
+    p.on('connection', (conn: any) => {
+      conn.on('open', () => {
+        setP2pConnected(true);
+        setP2pStatus('Peer Connected!');
+        fortniteAudio.playUiClick();
+      });
+    });
+    p.on('error', (err: any) => {
+      setP2pStatus(`Error: ${err?.type || 'Failed'}`);
+    });
+    fortniteAudio.playUiClick();
+  };
+
+  const handleJoinP2P = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanCode = p2pInput.trim().toUpperCase();
+    if (!cleanCode) return;
+    const PeerClass = (window as any).Peer;
+    if (!PeerClass) return;
+
+    const p = new PeerClass();
+    p.on('open', () => {
+      setP2pStatus(`Connecting to ${cleanCode}...`);
+      const conn = p.connect(cleanCode);
+      conn.on('open', () => {
+        setP2pConnected(true);
+        setP2pCode(cleanCode);
+        setP2pStatus(`Connected to ${cleanCode}`);
+        setParty((prev) => ({ ...prev, code: cleanCode }));
+        multiplayerClient.connectWithCode(cleanCode, {
+          name: profile.name,
+          skinId: profile.selectedSkin,
+          level: profile.level,
+        });
+        fortniteAudio.playUiClick();
+      });
+    });
+    p.on('error', (err: any) => {
+      setP2pStatus(`Error: ${err?.type || 'Failed'}`);
+    });
+    fortniteAudio.playUiClick();
+  };
 
   const cleanPartyCode = (party.code || '').trim().toUpperCase();
   const isGlobalServer = cleanPartyCode === 'ROYALE-GLOBAL' || cleanPartyCode.startsWith('GLOBAL');
@@ -289,28 +357,28 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     bg: string;
   }[] = [
     {
-      id: 'island_2v2',
-      name: 'Expanded 2v2 Island',
-      tag: 'FULL BATTLEGROUND',
-      desc: 'Complete island with Tilted Towers, Pleasant Park, Dusty Depot, cliffs & highway circuit.',
-      icon: '🗺️',
-      bg: 'from-emerald-600/50 to-slate-900/90',
+      id: 'suburban_valley',
+      name: 'Suburban Valley',
+      tag: 'ENTERABLE 2-STORY',
+      desc: 'Organic roads, cul-de-sacs, enterable 2-story houses with walkout sniper balconies & interior rooms.',
+      icon: '🏡',
+      bg: 'from-amber-600/50 to-slate-900/90',
     },
     {
-      id: 'tilted_skyscrapers',
-      name: 'Urban Skyscraper Arena',
-      tag: '6-STORY VERTICAL',
-      desc: 'High-density urban battle centered on 6-story furnished towers with stair landings & jump pads.',
+      id: 'financial_district',
+      name: 'Financial District',
+      tag: 'SKYSCRAPER ARENA',
+      desc: 'Urban high-rises, zebra crosswalks, enterable corporate lobbies, stairs & rooftop observation decks.',
       icon: '🏙️',
       bg: 'from-indigo-600/50 to-slate-900/90',
     },
     {
-      id: 'pleasant_valley',
-      name: 'Classic Pleasant Valley',
-      tag: 'FURNISHED HOMES',
-      desc: 'Suburban tactical warfare with fully furnished luxury homes, driveways, cars & interior loot.',
-      icon: '🏡',
-      bg: 'from-amber-600/50 to-slate-900/90',
+      id: 'neocity_heights',
+      name: 'Neo-City Heights',
+      tag: 'BI-LEVEL METROPARK',
+      desc: 'Sunken highway underpass, elevated skywalk bridges, 2-story commercial pavilions with mezzanine walkways.',
+      icon: '🌆',
+      bg: 'from-cyan-600/50 to-slate-900/90',
     },
   ];
 
@@ -362,7 +430,15 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   ];
 
   return (
-    <div className="relative w-full h-screen bg-slate-950 text-white flex flex-col justify-between p-4 sm:p-6 overflow-hidden select-none">
+    <div
+      className="relative w-full h-[100dvh] max-h-[100dvh] bg-slate-950 text-white flex flex-col justify-between overflow-hidden select-none"
+      style={{
+        paddingTop: 'max(env(safe-area-inset-top), clamp(8px, 1.8dvh, 20px))',
+        paddingBottom: 'max(env(safe-area-inset-bottom), clamp(8px, 1.8dvh, 20px))',
+        paddingLeft: 'max(env(safe-area-inset-left), clamp(10px, 2.5dvw, 24px))',
+        paddingRight: 'max(env(safe-area-inset-right), clamp(10px, 2.5dvw, 24px))',
+      }}
+    >
       {/* Background Atmosphere - Vibrant Deep Tones, Zero Neon Bloom */}
       <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-slate-900 to-slate-950 pointer-events-none" />
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-900/15 rounded-full blur-[90px] pointer-events-none" />
@@ -384,19 +460,26 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
 
         {/* Top Right: Party Code Pill, V-Bucks, Level & Locker */}
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {/* Party Code Pill */}
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-indigo-950/80 border border-indigo-500/40 backdrop-blur-md shadow-md">
-            <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+          {/* Apple Liquid Glass P2P Room Pill */}
+          <div className="apple-liquid-glass flex items-center gap-2 px-3.5 py-1.5 shadow-lg">
+            <Radio className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-indigo-300 font-bold">CODE:</span>
+              <span className="text-[10px] text-blue-300 font-bold">ROOM:</span>
               <span className="font-mono font-black text-sm text-amber-300 tracking-wider">
-                {party.code || 'CONNECTING...'}
+                {p2pCode || party.code || 'READY'}
               </span>
             </div>
             <button
+              onClick={handleHostP2P}
+              title="Host 5-Character P2P Room"
+              className="px-2 py-0.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-mono text-[10px] font-black transition-all ml-1 cursor-pointer"
+            >
+              HOST
+            </button>
+            <button
               onClick={handleCopyCode}
-              title="Copy Party Code"
-              className="p-1 rounded-lg bg-indigo-800/80 hover:bg-indigo-700 text-indigo-200 transition-all ml-1 cursor-pointer"
+              title="Copy Code"
+              className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 transition-all cursor-pointer"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
@@ -406,7 +489,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           <div
             onClick={onOpenShop}
             title="Click to Open S-Token Shop & Armory"
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-amber-950/70 border border-amber-500/50 backdrop-blur-md cursor-pointer hover:bg-amber-900/80 transition-all shadow-md"
+            className="apple-liquid-glass flex items-center gap-1.5 px-3.5 py-1.5 cursor-pointer hover:scale-102 transition-all shadow-md"
           >
             <span className="text-amber-400 font-black text-sm">🅢</span>
             <div className="flex flex-col">
@@ -418,7 +501,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           </div>
 
           {/* Level */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-900/90 border border-white/15 backdrop-blur-md shadow-md">
+          <div className="apple-liquid-glass flex items-center gap-1.5 px-3.5 py-1.5 shadow-md">
             <Crown className="w-4 h-4 text-amber-400" />
             <span className="font-mono font-black text-xs sm:text-sm text-white">LVL {profile.level}</span>
           </div>
@@ -426,7 +509,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           {/* S-Token Shop & Armory Button */}
           <button
             onClick={onOpenShop}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-display font-black text-xs sm:text-sm transition-all shadow-md shadow-amber-950/40 active:scale-95 cursor-pointer"
+            className="apple-liquid-glass flex items-center gap-2 px-4 py-1.5 hover:scale-102 text-amber-300 font-display font-black text-xs sm:text-sm transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <span className="text-base leading-none">⚡</span>
             <span>S-TOKEN SHOP</span>
@@ -486,12 +569,12 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                     onSelectMode(mode.id);
                     fortniteAudio.playUiClick();
                   }}
-                  className={`cursor-pointer p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                  className={`cursor-pointer p-3.5 rounded-2xl apple-liquid-glass transition-all flex items-center justify-between gap-3 ${
                     isSelected
                       ? mode.isLocked
-                        ? 'border-rose-500 bg-gradient-to-r ' + mode.bg + ' ring-2 ring-rose-500/70 shadow-lg scale-[1.01]'
-                        : 'border-amber-400 bg-gradient-to-r ' + mode.bg + ' ring-2 ring-amber-500/70 shadow-lg scale-[1.01]'
-                      : 'border-white/10 bg-slate-900/70 hover:bg-slate-800/80 hover:border-white/20'
+                        ? 'border-rose-500 bg-rose-950/40 ring-2 ring-rose-500/70 shadow-lg scale-[1.01]'
+                        : 'border-cyan-400/80 bg-blue-950/40 ring-2 ring-cyan-400/70 shadow-lg shadow-cyan-950/50 scale-[1.01]'
+                      : 'hover:border-white/30 hover:scale-[1.005]'
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -506,7 +589,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                         <span className={`px-2 py-0.5 rounded text-[9px] font-black font-mono ${
                           mode.isLocked
                             ? 'bg-rose-950 text-rose-200 border border-rose-600/50'
-                            : 'bg-slate-800 text-amber-300 border border-amber-500/40'
+                            : 'bg-blue-950/80 text-cyan-300 border border-cyan-500/40'
                         }`}>
                           {mode.tag}
                         </span>
@@ -572,13 +655,13 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                   <span>📍</span> BATTLEGROUND MAP
                 </span>
                 <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                  {battlegroundMaps.find((m) => m.id === (selectedMap || 'island_2v2'))?.tag}
+                  {battlegroundMaps.find((m) => m.id === selectedMap || (m.id === 'suburban_valley' && (selectedMap === 'pleasant_valley' || selectedMap === 'island_2v2')) || (m.id === 'financial_district' && selectedMap === 'tilted_skyscrapers'))?.tag || 'ENTERABLE 2-STORY'}
                 </span>
               </div>
 
               <div className="flex flex-col gap-1.5">
                 {battlegroundMaps.map((map) => {
-                  const isCurMap = (selectedMap || 'island_2v2') === map.id;
+                  const isCurMap = selectedMap === map.id || (map.id === 'suburban_valley' && (selectedMap === 'pleasant_valley' || selectedMap === 'island_2v2' || !selectedMap)) || (map.id === 'financial_district' && selectedMap === 'tilted_skyscrapers');
                   return (
                     <button
                       key={map.id}
@@ -632,9 +715,9 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
             </div>
 
             {/* Name Tag */}
-            <div className="relative z-10 mt-3 px-4 py-1.5 rounded-2xl bg-black/80 border border-white/20 backdrop-blur-md flex flex-col items-center shadow-md">
-              <span className="font-display font-black text-base text-white">{currentSkin.name}</span>
-              <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">
+            <div className="relative z-10 mt-3 px-5 py-2 apple-liquid-glass flex flex-col items-center shadow-lg border border-white/20">
+              <span className="font-display font-black text-base text-white tracking-wide">{currentSkin.name}</span>
+              <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-widest">
                 {currentSkin.rarity} OUTFIT
               </span>
             </div>
@@ -644,13 +727,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
         {/* Right: Online Party / Squad Hub */}
         <div className="flex flex-col gap-3">
           {/* Party Hub Panel */}
-          <div className={`p-4 rounded-3xl backdrop-blur-md flex flex-col gap-3 shadow-2xl transition-all ${
-            selectedMode === 'battle_royale'
-              ? isBattleRoyaleLocked
-                ? 'bg-slate-900/95 border-2 border-rose-600/70 shadow-xl'
-                : 'bg-slate-900/95 border-2 border-emerald-500/70 shadow-xl'
-              : 'bg-slate-900/85 border border-white/15'
-          }`}>
+          <div className="apple-liquid-glass p-4.5 flex flex-col gap-3 shadow-2xl transition-all">
             {/* Header with Online Status */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -702,6 +779,63 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                 </div>
               )
             )}
+
+            {/* Apple Tinted Liquid Glass Zero-Install P2P Pod */}
+            <div className="apple-liquid-glass p-3.5 flex flex-col gap-2.5 shadow-xl border border-blue-400/30">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
+                  <span className="font-display font-black text-xs text-white tracking-wider">
+                    PEER-TO-PEER MULTIPLAYER
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-cyan-300 border border-blue-500/30">
+                  {p2pConnected ? 'P2P SYNCED' : 'PEERJS READY'}
+                </span>
+              </div>
+
+              {/* Host Match (generates 5-char code) */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleHostP2P}
+                  className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-display font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-950/50 active:scale-95 transition-all cursor-pointer border border-blue-400/40"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>HOST MATCH</span>
+                </button>
+                {p2pCode && (
+                  <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 border border-cyan-400/50 font-mono font-black text-sm text-cyan-300 tracking-widest shadow-inner select-all">
+                    {p2pCode}
+                  </div>
+                )}
+              </div>
+
+              {/* Join Match with 5-char code input */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  maxLength={5}
+                  placeholder="5-CHAR CODE..."
+                  value={p2pInput}
+                  onChange={(e) => setP2pInput(e.target.value.toUpperCase())}
+                  className="flex-1 px-3 py-1.5 rounded-xl bg-black/60 border border-white/20 text-xs font-mono font-bold text-cyan-300 placeholder:text-slate-500 uppercase focus:outline-none focus:border-cyan-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleJoinP2P}
+                  className="px-4 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer"
+                >
+                  JOIN MATCH
+                </button>
+              </div>
+
+              {p2pStatus && (
+                <div className="text-[10px] font-mono text-cyan-200/90 bg-cyan-950/40 px-2 py-1 rounded-lg border border-cyan-500/20 truncate">
+                  ⚡ {p2pStatus}
+                </div>
+              )}
+            </div>
 
             {/* Active Room Code Box */}
             <div className="p-3 rounded-2xl bg-black/60 border border-white/10 flex flex-col gap-2">
@@ -919,8 +1053,10 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
 
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-xs text-slate-400 text-center sm:text-left">
-            🖱️ Click screen to lock mouse. Controls: <strong className="text-blue-400 font-mono">[W,A,S,D]</strong> Move •{' '}
-            <strong className="text-blue-400 font-mono">[Shift]</strong> Fast Sprint •{' '}
+            🖱️ Controls: <strong className="text-blue-400 font-mono">[W,A,S,D]</strong> Move •{' '}
+            <strong className="text-cyan-400 font-mono">[X]</strong> Speed Boost •{' '}
+            <strong className="text-purple-400 font-mono">[Z]</strong> Kinetic Slam •{' '}
+            <strong className="text-blue-400 font-mono">[Shift]</strong> Sprint •{' '}
             <strong className="text-amber-400 font-mono">[Q,F,R,T]</strong> Build •{' '}
             <strong className="text-blue-400 font-mono">[V]</strong> 1st/3rd Person
           </div>
@@ -928,12 +1064,16 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           <button
             onClick={handlePlayClick}
             disabled={isReady || isBattleRoyaleLocked}
-            className={`w-full sm:w-auto px-12 py-4 rounded-3xl font-display font-black text-xl tracking-wider transform -skew-x-6 transition-all flex items-center justify-center gap-3 ${
+            className={`w-full sm:w-auto px-12 py-4 rounded-3xl font-display font-black text-xl tracking-wider transition-all flex items-center justify-center gap-3 relative overflow-hidden ${
               isBattleRoyaleLocked
                 ? 'bg-slate-800/90 border-2 border-rose-600/60 text-rose-300/80 cursor-not-allowed shadow-none'
-                : 'hover:scale-105 active:scale-95 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-xl shadow-amber-950/60 cursor-pointer'
+                : 'hover:scale-105 active:scale-95 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-slate-950 shadow-2xl shadow-amber-500/30 cursor-pointer border border-white/40 ring-1 ring-white/50'
             }`}
           >
+            {/* Top liquid specular shine */}
+            {!isBattleRoyaleLocked && (
+              <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/45 to-transparent pointer-events-none rounded-t-3xl" />
+            )}
             {isBattleRoyaleLocked ? (
               <>
                 <Lock className="w-6 h-6 text-rose-400" />

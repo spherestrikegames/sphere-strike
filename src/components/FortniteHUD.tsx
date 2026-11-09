@@ -163,7 +163,15 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
   const vehicleNitroPercent = activeVehicle ? Math.round(activeVehicle.nitro) : 0;
 
   return (
-    <div className="absolute inset-0 pointer-events-none select-none overflow-hidden flex flex-col justify-between p-4 sm:p-6 z-20 font-sans">
+    <div
+      className="absolute inset-0 pointer-events-none select-none overflow-hidden flex flex-col justify-between z-20 font-sans"
+      style={{
+        paddingTop: 'max(clamp(12px, 2.5dvh, 24px), env(safe-area-inset-top, 0px))',
+        paddingRight: 'max(clamp(12px, 2.5dvw, 24px), env(safe-area-inset-right, 0px))',
+        paddingBottom: 'max(clamp(12px, 2.5dvh, 24px), env(safe-area-inset-bottom, 0px))',
+        paddingLeft: 'max(clamp(12px, 2.5dvw, 24px), env(safe-area-inset-left, 0px))',
+      }}
+    >
       {/* Damage Taken Red Flash */}
       {damageTakenFlash && (
         <div className="absolute inset-0 bg-red-600/25 border-8 border-red-600/60 pointer-events-none animate-pulse duration-75 z-10" />
@@ -560,7 +568,7 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
           </div>
         ) : (
           <div className="hidden sm:flex flex-col items-center">
-            <div className="w-72 h-8 rounded-2xl bg-black/70 backdrop-blur-md border border-white/20 flex items-center justify-around px-4 shadow-xl text-white font-mono text-xs font-bold">
+            <div className="liquid-glass w-80 h-9 flex items-center justify-around px-4 shadow-xl text-white font-mono text-xs font-bold rounded-[16px]">
               <span className="text-slate-400">NW</span>
               <span className="text-amber-400 font-black">N</span>
               <span className="text-slate-400">NE</span>
@@ -570,15 +578,33 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               <span className="text-slate-400">SW</span>
               <span className="text-white font-black">W</span>
             </div>
-            <div className="w-2 h-2 -mt-1 rotate-45 bg-amber-400 border border-white shadow-md" />
+            <div className="w-2 h-2 -mt-1 rotate-45 bg-amber-400 border border-white shadow-md z-10" />
           </div>
         )}
 
-        {/* Right: Storm Timer / Flat Arena Indicator & Perspective Toggle Button */}
-        <div className="flex flex-col items-end gap-2">
+        {/* Right: Circular Glass-Rimmed Minimap & Storm Timer */}
+        <div className="flex flex-col items-end gap-2.5">
+          {/* Circular Glass-Rimmed Minimap Frame */}
+          <div className="liquid-glass w-24 h-24 sm:w-28 sm:h-28 rounded-full flex items-center justify-center relative overflow-hidden shadow-2xl border border-white/25">
+            {/* Internal Rings */}
+            <div className="absolute inset-2.5 rounded-full border border-white/15" />
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-full h-px bg-white/10" />
+              <div className="h-full w-px bg-white/10" />
+            </div>
+            {/* North Pip */}
+            <span className="absolute top-1.5 text-[9px] font-mono font-black text-amber-400">N</span>
+            {/* Player Center Blip */}
+            <div className="w-3 h-3 text-cyan-400 font-black text-xs flex items-center justify-center z-10 drop-shadow-[0_0_8px_#0a84ff]">
+              ▲
+            </div>
+            {/* Safe Zone Ring */}
+            <div className="absolute w-14 h-14 rounded-full border border-emerald-400/60 animate-pulse pointer-events-none" />
+          </div>
+
           {/* Storm Status or 1v1 Arena Badge */}
           {gameMode === '1v1_build_fight' ? (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-amber-950/80 backdrop-blur-md border border-amber-500/50 shadow-xl">
+            <div className="liquid-glass flex items-center gap-2 px-3.5 py-1.5 rounded-[16px] shadow-xl">
               <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
               <div className="flex flex-col items-end">
                 <span className="text-[9px] font-bold text-amber-300 leading-none">FLAT ARENA</span>
@@ -588,7 +614,7 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-purple-950/80 backdrop-blur-md border border-purple-500/50 shadow-xl">
+            <div className="liquid-glass flex items-center gap-2 px-3.5 py-1.5 rounded-[16px] shadow-xl">
               <div className="w-2.5 h-2.5 rounded-full bg-purple-400 animate-ping" />
               <div className="flex flex-col items-end">
                 <span className="text-[9px] font-bold text-purple-300 leading-none">
@@ -1074,10 +1100,10 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               </div>
             ) : (
               <>
-                <div className="absolute w-2.5 h-0.5 shadow-sm -left-3" style={{ backgroundColor: reticleColor }} />
-                <div className="absolute w-2.5 h-0.5 shadow-sm -right-3" style={{ backgroundColor: reticleColor }} />
-                <div className="absolute h-2.5 w-0.5 shadow-sm -top-3" style={{ backgroundColor: reticleColor }} />
-                <div className="absolute h-2.5 w-0.5 shadow-sm -bottom-3" style={{ backgroundColor: reticleColor }} />
+                <div className="reticle-tick left absolute w-2.5 h-0.5 shadow-sm -left-3 rounded-full" style={{ backgroundColor: reticleColor }} />
+                <div className="reticle-tick right absolute w-2.5 h-0.5 shadow-sm -right-3 rounded-full" style={{ backgroundColor: reticleColor }} />
+                <div className="reticle-tick top absolute h-2.5 w-0.5 shadow-sm -top-3 rounded-full" style={{ backgroundColor: reticleColor }} />
+                <div className="reticle-tick bottom absolute h-2.5 w-0.5 shadow-sm -bottom-3 rounded-full" style={{ backgroundColor: reticleColor }} />
                 <div className="w-1 h-1 rounded-full opacity-90 shadow-sm" style={{ backgroundColor: reticleColor }} />
               </>
             )}
@@ -1102,45 +1128,55 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
 
       {/* BOTTOM SECTION: Player Avatar, Health/Shield (250/250 Max), Building Matrix & Weapon Slots */}
       <div className="flex flex-col sm:flex-row items-end justify-between gap-4 w-full">
-        {/* Left: Player Character Portrait & 250 Health / 250 Shield High-Capacity Bars */}
-        <div className="flex items-center gap-3 w-80 sm:w-96 bg-black/60 backdrop-blur-md p-2 rounded-3xl border border-white/10 shadow-xl">
+        {/* Left: Player Character Portrait & Liquid Glass Vitals Pod */}
+        <div
+          className="liquid-glass flex items-center gap-2.5 p-2.5 shadow-2xl"
+          style={{
+            width: 'clamp(200px, 24dvw, 340px)',
+            borderRadius: 'clamp(14px, 2vw, 22px)',
+          }}
+        >
           <PlayerCharacterAvatar skinId={selectedSkin} size="lg" className="shrink-0 ring-2 ring-cyan-400/80 shadow-[0_0_15px_rgba(6,182,212,0.4)]" />
           <div className="flex flex-col gap-2 flex-1">
-            {/* Shield Bar (Blue) */}
+            {/* Liquid Blue Shield Bar */}
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between text-xs font-bold text-cyan-300 px-1">
                 <div className="flex items-center gap-1.5">
                   <Shield className="w-4 h-4 text-cyan-400" />
-                  <span>SHIELD</span>
+                  <span className="tracking-wide">SHIELD</span>
                 </div>
-                <span className="font-mono text-sm font-black text-cyan-300">
+                <span className="font-mono text-sm font-black text-cyan-300 drop-shadow-sm">
                   {Math.round(shield)} / {effectiveMaxShield}
                 </span>
               </div>
-              <div className="w-full h-3 rounded-full bg-slate-950/80 border border-cyan-500/50 p-0.5 shadow-lg overflow-hidden">
+              <div className="w-full h-3.5 rounded-full bg-black/40 border border-white/20 p-0.5 shadow-inner overflow-hidden relative">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-150 shadow-[0_0_12px_rgba(6,182,212,0.6)]"
+                  className="liquid-gel-shield h-full rounded-full transition-all duration-150 overflow-hidden"
                   style={{ width: `${shieldPercent}%` }}
-                />
+                >
+                  <div className="gel-specular" />
+                </div>
               </div>
             </div>
 
-            {/* Health Bar (Green) */}
+            {/* Liquid Green Health Bar */}
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between text-xs font-bold text-emerald-300 px-1">
                 <div className="flex items-center gap-1.5">
                   <Heart className="w-4 h-4 text-emerald-400" />
-                  <span>HEALTH</span>
+                  <span className="tracking-wide">HEALTH</span>
                 </div>
-                <span className="font-mono text-sm font-black text-emerald-300">
+                <span className="font-mono text-sm font-black text-emerald-300 drop-shadow-sm">
                   {Math.round(health)} / {effectiveMaxHealth}
                 </span>
               </div>
-              <div className="w-full h-3 rounded-full bg-slate-950/80 border border-emerald-500/50 p-0.5 shadow-lg overflow-hidden">
+              <div className="w-full h-3.5 rounded-full bg-black/40 border border-white/20 p-0.5 shadow-inner overflow-hidden relative">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-400 transition-all duration-150 shadow-[0_0_12px_rgba(16,185,129,0.6)]"
+                  className="liquid-gel-health h-full rounded-full transition-all duration-150 overflow-hidden"
                   style={{ width: `${healthPercent}%` }}
-                />
+                >
+                  <div className="gel-specular" />
+                </div>
               </div>
             </div>
           </div>
@@ -1181,6 +1217,37 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               </div>
             </div>
 
+            {/* Tactical Special Abilities: Speed Boost [X] & Kinetic Slam [Z] */}
+            <div className="flex items-center gap-2">
+              <div
+                className="liquid-glass px-3 py-1.5 flex items-center gap-2 rounded-2xl shadow-lg border border-cyan-400/40"
+                title="Press [X] for High-Velocity Overdrive Speed Boost"
+              >
+                <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-black text-white font-mono">[X]</span>
+                    <span className="text-[10px] font-black text-cyan-300">SPEED BOOST</span>
+                  </div>
+                  <span className="text-[8px] font-mono text-cyan-200/70 leading-none">OVERDRIVE JET</span>
+                </div>
+              </div>
+
+              <div
+                className="liquid-glass px-3 py-1.5 flex items-center gap-2 rounded-2xl shadow-lg border border-purple-400/40"
+                title="Press [Z] for Kinetic Shockwave Slam"
+              >
+                <div className="w-2 h-2 rounded-full bg-purple-400 shadow-[0_0_8px_#c084fc] animate-pulse" />
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-black text-white font-mono">[Z]</span>
+                    <span className="text-[10px] font-black text-purple-300">KINETIC SLAM</span>
+                  </div>
+                  <span className="text-[8px] font-mono text-purple-200/70 leading-none">SHOCKWAVE PULSE</span>
+                </div>
+              </div>
+            </div>
+
             {/* Quick Build Keys (Wall [Q], Floor [F], Ramp [R], Cone [T]) */}
             <div className="flex items-center gap-1.5">
               {[
@@ -1208,8 +1275,20 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
           </div>
         )}
 
-        {/* Right: 6-Slot Authentic Inventory Hotbar */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Right: Magazine/Reserve Ammo Counter & Tactical Inventory Hotbar */}
+        <div className="flex flex-col items-end gap-2">
+          {/* Magazine & Reserve Ammo Counter ("30 / 120") */}
+          <div className="liquid-glass px-4 py-1.5 flex items-center gap-1.5 text-white font-mono rounded-[16px] shadow-lg">
+            <span className="text-amber-400 font-black text-lg">
+              {currentWeapon ? (currentWeapon.type === 'pickaxe' ? 'PICK' : currentWeapon.currentAmmo) : '—'}
+            </span>
+            <span className="text-white/40 text-sm">/</span>
+            <span className="text-slate-300 font-bold text-sm">
+              {currentWeapon ? (currentWeapon.type === 'shield' || currentWeapon.type === 'heal' ? 'MAX' : currentWeapon.type === 'pickaxe' ? '∞' : currentWeapon.reserveAmmo !== undefined ? currentWeapon.reserveAmmo : 120) : '—'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 sm:gap-2">
           {inventory.map((wep, idx) => {
             const isSelected = activeSlot === idx;
             const rarityInfo = wep ? RARITY_COLORS[wep.rarity] : null;
@@ -1218,11 +1297,9 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               <button
                 key={idx}
                 onClick={() => onSelectSlot(idx)}
-                className={`pointer-events-auto relative w-12 h-14 sm:w-14 sm:h-16 rounded-2xl flex flex-col items-center justify-between p-1 border transition-all ${
-                  isSelected
-                    ? 'border-white ring-2 ring-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.5)] scale-105'
-                    : 'border-white/20 bg-slate-950/60'
-                } ${rarityInfo ? `bg-gradient-to-b ${rarityInfo.bg}` : 'bg-black/40'}`}
+                className={`pointer-events-auto relative w-12 h-14 sm:w-14 sm:h-16 flex flex-col items-center justify-between p-1.5 transition-all cursor-pointer ${
+                  isSelected ? 'liquid-slot liquid-slot-active scale-105' : 'liquid-slot hover:scale-102'
+                } ${rarityInfo ? `bg-gradient-to-b ${rarityInfo.bg}` : ''}`}
               >
                 <span className="text-[10px] font-black text-slate-300 font-mono">
                   {idx + 1}
@@ -1264,6 +1341,7 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               </button>
             );
           })}
+          </div>
         </div>
       </div>
     </div>

@@ -31,37 +31,48 @@ export function buildCharacterModel(
   const shirtColorInt = parseInt(skin.shirtColor.replace('#', '0x'));
   const pantsColorInt = parseInt(skin.pantsColor.replace('#', '0x'));
 
-  // Materials
-  const skinMat = new THREE.MeshStandardMaterial({
+  // PBR Glossy Stylized Materials (MeshPhysicalMaterial with clearcoat & specular highlights)
+  const skinMat = new THREE.MeshPhysicalMaterial({
     color: skinColorInt,
-    roughness: 0.65,
+    roughness: 0.25,
+    clearcoat: 0.6,
+    clearcoatRoughness: 0.1,
   });
-  const hairMat = new THREE.MeshStandardMaterial({
+  const hairMat = new THREE.MeshPhysicalMaterial({
     color: hairColorInt,
-    roughness: 0.8,
+    roughness: 0.35,
+    clearcoat: 0.5,
   });
-  const shirtMat = new THREE.MeshStandardMaterial({
+  const shirtMat = new THREE.MeshPhysicalMaterial({
     color: shirtColorInt,
-    metalness: skin.isGold ? 0.9 : 0.1,
-    roughness: skin.isGold ? 0.2 : 0.65,
+    metalness: skin.isGold ? 0.9 : 0.15,
+    roughness: skin.isGold ? 0.15 : 0.2,
+    clearcoat: 0.8,
+    clearcoatRoughness: 0.1,
   });
-  const vestMat = new THREE.MeshStandardMaterial({
+  const vestMat = new THREE.MeshPhysicalMaterial({
     color: skin.isGold ? 0xb45309 : 0x1e293b,
-    metalness: skin.isGold ? 0.8 : 0.3,
-    roughness: 0.6,
-  });
-  const pantsMat = new THREE.MeshStandardMaterial({
-    color: pantsColorInt,
-    roughness: 0.8,
-  });
-  const darkGearMat = new THREE.MeshStandardMaterial({
-    color: 0x0f172a,
-    roughness: 0.7,
-  });
-  const buckleMat = new THREE.MeshStandardMaterial({
-    color: 0xfacc15,
-    metalness: 0.9,
+    metalness: skin.isGold ? 0.85 : 0.25,
     roughness: 0.2,
+    clearcoat: 0.75,
+    clearcoatRoughness: 0.1,
+  });
+  const pantsMat = new THREE.MeshPhysicalMaterial({
+    color: pantsColorInt,
+    roughness: 0.28,
+    clearcoat: 0.5,
+  });
+  const darkGearMat = new THREE.MeshPhysicalMaterial({
+    color: 0x0f172a,
+    roughness: 0.2,
+    metalness: 0.3,
+    clearcoat: 0.8,
+  });
+  const buckleMat = new THREE.MeshPhysicalMaterial({
+    color: 0xfacc15,
+    metalness: 0.95,
+    roughness: 0.15,
+    clearcoat: 1.0,
   });
   const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const eyePupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
@@ -603,4 +614,107 @@ function drawNameTagCanvas(
   // Health fill (Green to Red)
   ctx.fillStyle = healthPercent > 0.35 ? '#22c55e' : '#ef4444';
   ctx.fillRect(barX, barY + 12, barW * Math.max(0, Math.min(1, healthPercent)), barH);
+}
+
+export function buildSphereCharacterRig(
+  skinId: string,
+  weaponType: WeaponType = 'ar',
+  rarity: WeaponRarity = 'epic',
+  accentColorHex?: number
+): CharacterMeshRig {
+  const skin = FORTNITE_SKINS.find((s) => s.id === skinId) || FORTNITE_SKINS[0];
+  const root = new THREE.Group();
+
+  const coreColor = accentColorHex !== undefined ? accentColorHex : parseInt(skin.shirtColor.replace('#', '0x'));
+  const ringColor = parseInt(skin.headColor.replace('#', '0x'));
+
+  // 1. Glossy Stylized Core Sphere (Apple liquid/acrylic feel with clearcoat)
+  const sphereGeo = new THREE.SphereGeometry(0.55, 32, 32);
+  const sphereMat = new THREE.MeshPhysicalMaterial({
+    color: coreColor,
+    metalness: skin.isGold ? 0.9 : 0.25,
+    roughness: 0.15,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.08,
+    transmission: 0.35,
+    ior: 1.5,
+  });
+  const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+  sphereMesh.position.y = 1.15;
+  sphereMesh.castShadow = true;
+  sphereMesh.receiveShadow = true;
+  root.add(sphereMesh);
+
+  // 2. Orbital Gyro Rings
+  const ringGeo = new THREE.TorusGeometry(0.68, 0.04, 16, 48);
+  const ringMat = new THREE.MeshStandardMaterial({
+    color: ringColor,
+    metalness: 0.85,
+    roughness: 0.2,
+  });
+  const gyroRing1 = new THREE.Mesh(ringGeo, ringMat);
+  gyroRing1.position.y = 1.15;
+  gyroRing1.rotation.x = Math.PI / 2;
+  root.add(gyroRing1);
+
+  const gyroRing2 = new THREE.Mesh(ringGeo, ringMat);
+  gyroRing2.position.y = 1.15;
+  gyroRing2.rotation.y = Math.PI / 4;
+  root.add(gyroRing2);
+
+  // 3. Glowing Visor / Optical Eye
+  const visorGeo = new THREE.SphereGeometry(0.18, 16, 16);
+  const visorMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+  const visor = new THREE.Mesh(visorGeo, visorMat);
+  visor.position.set(0, 1.25, 0.48);
+  root.add(visor);
+
+  // Weapon Attachment Node
+  const weaponSlot = new THREE.Group();
+  weaponSlot.position.set(0.48, 1.05, 0.25);
+  root.add(weaponSlot);
+
+  let currentWep = weaponType;
+  const setWeapon = (newType: WeaponType, newRarity: WeaponRarity = 'epic') => {
+    currentWep = newType;
+    while (weaponSlot.children.length > 0) {
+      weaponSlot.remove(weaponSlot.children[0]);
+    }
+    const mesh = createWeaponMesh(newType, newRarity);
+    mesh.scale.set(0.85, 0.85, 0.85);
+    weaponSlot.add(mesh);
+  };
+  setWeapon(weaponType, rarity);
+
+  // Dummy groups to satisfy CharacterMeshRig interface
+  const dummyGroup = new THREE.Group();
+
+  const updateAnimation = (time: number, isMoving: boolean) => {
+    // Gyro rotation animation
+    gyroRing1.rotation.z = time * 2.5;
+    gyroRing2.rotation.x = time * 1.8;
+    sphereMesh.rotation.y = time * 1.2;
+    if (isMoving) {
+      sphereMesh.position.y = 1.15 + Math.sin(time * 16) * 0.05;
+    } else {
+      sphereMesh.position.y = 1.15 + Math.sin(time * 3) * 0.03;
+    }
+  };
+
+  return {
+    root,
+    head: dummyGroup,
+    body: root,
+    leftArm: dummyGroup,
+    rightArm: dummyGroup,
+    leftLeg: dummyGroup,
+    rightLeg: dummyGroup,
+    weaponSlot,
+    skinId,
+    get currentWeaponType() {
+      return currentWep;
+    },
+    setWeapon,
+    updateAnimation,
+  };
 }

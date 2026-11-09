@@ -46,26 +46,44 @@ function spawnRemoteMesh() {
 
   const group = new THREE.Group();
 
-  // Character Body
-  const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.4, 16);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.4 });
+  // Glossy Sphere Head / Core Mesh (MeshPhysicalMaterial)
+  const sphereGeo = new THREE.SphereGeometry(0.55, 32, 32);
+  const sphereMat = new THREE.MeshPhysicalMaterial({
+    color: 0x0a84ff,
+    metalness: 0.15,
+    roughness: 0.2,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.1,
+    transmission: 0.45,
+    ior: 1.5,
+  });
+  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+  sphere.position.y = 1.35;
+  sphere.castShadow = true;
+  sphere.receiveShadow = true;
+  group.add(sphere);
+
+  // Body Base Pedestal
+  const bodyGeo = new THREE.CylinderGeometry(0.35, 0.45, 1.0, 24);
+  const bodyMat = new THREE.MeshPhysicalMaterial({
+    color: 0x1e293b,
+    metalness: 0.4,
+    roughness: 0.2,
+    clearcoat: 0.8,
+  });
   const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 0.7;
+  body.position.y = 0.55;
+  body.castShadow = true;
+  body.receiveShadow = true;
   group.add(body);
 
-  // Character Head
-  const headGeo = new THREE.SphereGeometry(0.3, 16, 16);
-  const headMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3 });
-  const head = new THREE.Mesh(headGeo, headMat);
-  head.position.y = 1.6;
-  group.add(head);
-
-  // Tactical Visor
-  const visorGeo = new THREE.BoxGeometry(0.35, 0.15, 0.2);
-  const visorMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.1 });
-  const visor = new THREE.Mesh(visorGeo, visorMat);
-  visor.position.set(0, 1.6, 0.22);
-  group.add(visor);
+  // Visor Ring
+  const ringGeo = new THREE.TorusGeometry(0.58, 0.05, 16, 32);
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x30d158, roughness: 0.1, metalness: 0.8 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 1.35;
+  group.add(ring);
 
   sceneRef.add(group);
   remoteMesh = group;
@@ -88,7 +106,7 @@ function setupConnection(conn: any) {
   activeConn = conn;
 
   conn.on('open', () => {
-    updateStatus('Connected to Peer!', '#22c55e');
+    updateStatus('Connected to Peer!', '#30d158');
     spawnRemoteMesh();
   });
 
@@ -102,7 +120,7 @@ function setupConnection(conn: any) {
   });
 
   conn.on('close', () => {
-    updateStatus('Peer disconnected.', '#ef4444');
+    updateStatus('Peer disconnected.', '#ff453a');
     removeRemoteMesh();
     activeConn = null;
   });
@@ -115,37 +133,38 @@ function createUI() {
   container.id = 'p2p-net-ui';
   container.style.cssText = `
     position: fixed;
-    top: 16px;
-    left: 16px;
+    top: 20px;
+    left: 20px;
     z-index: 99999;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: rgba(15, 23, 42, 0.88);
+    background: rgba(15, 18, 28, 0.65);
+    backdrop-filter: blur(28px) saturate(190%);
+    -webkit-backdrop-filter: blur(28px) saturate(190%);
     border: 1px solid rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(8px);
-    border-radius: 12px;
-    padding: 12px;
-    font-family: ui-sans-serif, system-ui, sans-serif;
+    box-shadow: inset 0 1px 1.5px rgba(255, 255, 255, 0.5), 0 12px 36px rgba(0, 0, 0, 0.5);
+    border-radius: 22px;
+    padding: 12px 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "SF Pro Display", sans-serif;
     font-size: 12px;
     color: #fff;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
   `;
 
   container.innerHTML = `
-    <div style="font-weight: 800; font-size: 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
-      <span>🌐 P2P PEERJS</span>
-      <span id="p2p-status" style="font-size: 10px; font-weight: 700; color: #94a3b8;">OFFLINE</span>
+    <div style="font-weight: 800; font-size: 12px; display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+      <span style="letter-spacing: 0.5px;">🌐 P2P MULTIPLAYER</span>
+      <span id="p2p-status" style="font-size: 10px; font-weight: 700; color: #94a3b8;">DISCONNECTED</span>
+    </div>
+
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <button id="p2p-host-btn" style="flex: 1; padding: 7px 12px; background: #0a84ff; border: none; border-radius: 12px; color: #fff; font-weight: 700; cursor: pointer; transition: all 0.2s;">Host Room</button>
+      <div id="p2p-room-code" style="display: none; padding: 6px 12px; background: rgba(255,255,255,0.1); border-radius: 12px; font-family: monospace; font-weight: 800; color: #ffd60a; border: 1px solid rgba(255,214,10,0.4); letter-spacing: 2px;">---</div>
     </div>
 
     <div style="display: flex; gap: 6px;">
-      <button id="p2p-host-btn" style="flex: 1; padding: 6px 10px; background: #2563eb; border: none; border-radius: 6px; color: #fff; font-weight: 800; cursor: pointer;">Host Game</button>
-      <div id="p2p-room-code" style="display: none; padding: 6px 10px; background: rgba(0,0,0,0.5); border-radius: 6px; font-family: monospace; font-weight: bold; color: #fbbf24; border: 1px solid rgba(251,191,36,0.4);">---</div>
-    </div>
-
-    <div style="display: flex; gap: 6px;">
-      <input id="p2p-join-input" type="text" placeholder="Enter Room ID" style="width: 110px; padding: 6px 8px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; font-size: 11px; font-family: monospace;" />
-      <button id="p2p-join-btn" style="padding: 6px 12px; background: #059669; border: none; border-radius: 6px; color: #fff; font-weight: 800; cursor: pointer;">Join</button>
+      <input id="p2p-join-input" type="text" maxlength="5" placeholder="5-CHAR CODE" style="width: 100px; padding: 6px 10px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; color: #fff; font-size: 11px; font-family: monospace; font-weight: bold; text-transform: uppercase;" />
+      <button id="p2p-join-btn" style="padding: 6px 14px; background: #30d158; border: none; border-radius: 12px; color: #fff; font-weight: 700; cursor: pointer; transition: all 0.2s;">Join</button>
     </div>
   `;
 
@@ -160,17 +179,19 @@ function createUI() {
     hostBtn.onclick = () => {
       const PeerClass = (window as any).Peer;
       if (!PeerClass) {
-        updateStatus('PeerJS not loaded', '#ef4444');
+        updateStatus('PeerJS not loaded', '#ff453a');
         return;
       }
-      const shortId = 'room-' + Math.floor(1000 + Math.random() * 9000);
+      // Generate clean 5-character alphanumeric room code
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const shortId = Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
       peer = new PeerClass(shortId);
 
       peer.on('open', (id: string) => {
         hostBtn.style.display = 'none';
         roomDisplay.style.display = 'block';
-        roomDisplay.textContent = `ID: ${id}`;
-        updateStatus(`Hosting (${id})`, '#38bdf8');
+        roomDisplay.textContent = id;
+        updateStatus(`Hosting [${id}]`, '#64d2ff');
       });
 
       peer.on('connection', (conn: any) => {
@@ -178,19 +199,19 @@ function createUI() {
       });
 
       peer.on('error', (err: any) => {
-        updateStatus(`Error: ${err?.type || err}`, '#ef4444');
+        updateStatus(`Error: ${err?.type || err}`, '#ff453a');
       });
     };
   }
 
   if (joinBtn && joinInput) {
     joinBtn.onclick = () => {
-      const roomId = joinInput.value.trim();
+      const roomId = joinInput.value.trim().toUpperCase();
       if (!roomId) return;
 
       const PeerClass = (window as any).Peer;
       if (!PeerClass) {
-        updateStatus('PeerJS not loaded', '#ef4444');
+        updateStatus('PeerJS not loaded', '#ff453a');
         return;
       }
 
@@ -198,11 +219,11 @@ function createUI() {
       peer.on('open', () => {
         const conn = peer.connect(roomId);
         setupConnection(conn);
-        updateStatus(`Connecting to ${roomId}...`, '#f59e0b');
+        updateStatus(`Connecting to ${roomId}...`, '#ffd60a');
       });
 
       peer.on('error', (err: any) => {
-        updateStatus(`Error: ${err?.type || err}`, '#ef4444');
+        updateStatus(`Error: ${err?.type || err}`, '#ff453a');
       });
     };
   }

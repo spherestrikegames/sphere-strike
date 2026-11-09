@@ -386,7 +386,7 @@ export function addHarvestable(
 }
 
 export function addChest(
-  scene: THREE.Scene,
+  scene: THREE.Object3D,
   chests: LootChest[],
   chestMeshes: Map<string, THREE.Group>,
   colliders: SolidCollider[],

@@ -66,6 +66,9 @@ import { SpatialColliderGrid } from './spatialGrid';
 import { fortniteAudio } from '../utils/audio';
 import { multiplayerClient } from '../utils/multiplayer';
 import { initNetwork } from '../utils/p2pNetwork';
+import { ParticleVFXSystem } from './fortniteParticleVFX';
+import { SpherePhysicsEngine } from './spherePhysicsEngine';
+import { MapManager } from './mapManager';
 
 import { setupLightingImpl, setupGliderImpl, setupStormImpl, setupPlayerRigsImpl, setupScopeVisualizerImpl, spawnBotsImpl, setupMultiplayerImpl } from './fortniteEngineSetup';
 import { updatePlayersLeftCountImpl, updateDuelStateImpl, handleBattleRoyaleLocalDeathImpl, executeRespawnImpl, damageRemotePlayerImpl, handleRemotePlayerLethalImpl, applyDamageFromRemoteImpl, updateNetworkSyncImpl } from './fortniteEngineDuel';
@@ -216,6 +219,24 @@ export class FortniteEngine {
   public isCrouching: boolean = false;
   public isSliding: boolean = false;
   public slideTimer: number = 0;
+
+  // Kinetic Special Abilities & Speed Boost System
+  public isSpeedBoosting: boolean = false;
+  public speedBoostTimer: number = 0;
+  public speedBoostDuration: number = 3.5;
+  public speedBoostCooldown: number = 0;
+  public abilityKineticCooldown: number = 0;
+  public abilityShockwaveCooldown: number = 0;
+  public isKineticSlamming: boolean = false;
+  public sphereRestitution: number = 0.85; // Bounciness of sphere
+  public sphereFriction: number = 0.35; // Surface rolling friction
+  public sphereMass: number = 1.0;
+  public sphereRadius: number = 0.55;
+
+  // Particle VFX & Reactive Sphere Physics Systems & Dynamic 3D Maps
+  public vfxSystem!: import('./fortniteParticleVFX').ParticleVFXSystem;
+  public spherePhysicsEngine!: import('./spherePhysicsEngine').SpherePhysicsEngine;
+  public mapManager!: MapManager;
 
   // Teams & Social Identification
   public playerTeam: TeamType = 'ALPHA';
@@ -464,27 +485,27 @@ export class FortniteEngine {
       ];
       this.activeSlot = 1;
     } else {
-      if (this.selectedMap === 'tilted_skyscrapers') {
-        // Drop straight into Tilted Towers Skyscraper Canyon
-        this.playerPos.set((Math.random() - 0.5) * 40, 220, (Math.random() - 0.5) * 40);
+      if (this.selectedMap === 'financial_district' || this.selectedMap === 'tilted_skyscrapers') {
+        // Drop straight into Financial District Skyscraper Canyon
+        this.playerPos.set((Math.random() - 0.5) * 30, 220, (Math.random() - 0.5) * 30);
         this.storm.currentCenterX = 0;
         this.storm.currentCenterZ = 0;
         this.storm.targetCenterX = 0;
         this.storm.targetCenterZ = 0;
-      } else if (this.selectedMap === 'pleasant_valley') {
-        // Drop directly above Pleasant Park Suburban Neighborhood
-        this.playerPos.set(-140 + (Math.random() - 0.5) * 45, 220, -140 + (Math.random() - 0.5) * 45);
-        this.storm.currentCenterX = -140;
-        this.storm.currentCenterZ = -140;
-        this.storm.targetCenterX = -140;
-        this.storm.targetCenterZ = -140;
+      } else if (this.selectedMap === 'neocity_heights') {
+        // Drop into Neo-City Heights bi-level metro canyon
+        this.playerPos.set((Math.random() - 0.5) * 30, 220, 20 + (Math.random() - 0.5) * 30);
+        this.storm.currentCenterX = 0;
+        this.storm.currentCenterZ = 20;
+        this.storm.targetCenterX = 0;
+        this.storm.targetCenterZ = 20;
       } else {
-        const dropPOI = ISLAND_POIS[Math.floor(Math.random() * ISLAND_POIS.length)];
-        this.playerPos.set(
-          dropPOI.x + (Math.random() - 0.5) * 80,
-          220,
-          dropPOI.z + (Math.random() - 0.5) * 80
-        );
+        // Drop into Suburban Valley cul-de-sacs
+        this.playerPos.set((Math.random() - 0.5) * 30, 220, 10 + (Math.random() - 0.5) * 30);
+        this.storm.currentCenterX = 0;
+        this.storm.currentCenterZ = 10;
+        this.storm.targetCenterX = 0;
+        this.storm.targetCenterZ = 10;
       }
       this.inventory = [
         { ...DEFAULT_PICKAXE },
@@ -527,7 +548,14 @@ export class FortniteEngine {
     const resScale = profile.settings.resolutionScale || 1.0;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, Math.min(1.5, resScale)));
     this.renderer.shadowMap.enabled = profile.settings.shadows ?? false;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
+
+    // Initialize Particle VFX System & Sphere Physics Engine & Map Manager
+    this.vfxSystem = new ParticleVFXSystem(this.scene);
+    this.spherePhysicsEngine = new SpherePhysicsEngine(this.vfxSystem);
+    this.mapManager = new MapManager(this.scene);
 
     // Setup World & Lighting
     this.setupLighting();
@@ -556,15 +584,31 @@ export class FortniteEngine {
       this.spawnArenaGroundLoot();
       fortniteAudio.startGameMusic();
     } else {
-      const island = buildFortniteIsland(this.scene);
-      this.harvestables = island.harvestables;
-      this.harvestableMeshes = island.harvestableMeshes;
-      this.chests = island.chests;
-      this.chestMeshes = island.chestMeshes;
-      this.staticColliders = island.staticColliders;
-      this.spatialGrid.addAll(island.staticColliders);
-      this.vehicles = island.vehicles;
-      this.upgradeBenches = island.upgradeBenches;
+      let mapIndex: 0 | 1 | 2 = 0;
+      if (this.selectedMap === 'financial_district' || this.selectedMap === 'tilted_skyscrapers') {
+        mapIndex = 1;
+      } else if (this.selectedMap === 'neocity_heights') {
+        mapIndex = 2;
+      } else {
+        mapIndex = 0;
+      }
+
+      const mapData = this.mapManager.loadMap(mapIndex);
+      this.harvestables = mapData.harvestables;
+      this.harvestableMeshes = mapData.harvestableMeshes;
+      this.chests = mapData.chests;
+      this.chestMeshes = mapData.chestMeshes;
+      this.staticColliders = mapData.staticColliders;
+      this.spatialGrid.addAll(mapData.staticColliders);
+      this.vehicles = mapData.vehicles;
+      this.upgradeBenches = mapData.upgradeBenches;
+
+      // Position drop above the map spawn
+      this.playerPos.set(mapData.spawnPoint.x, 220, mapData.spawnPoint.z);
+      this.storm.currentCenterX = mapData.spawnPoint.x;
+      this.storm.currentCenterZ = mapData.spawnPoint.z;
+      this.storm.targetCenterX = mapData.spawnPoint.x;
+      this.storm.targetCenterZ = mapData.spawnPoint.z;
     }
 
     // Setup Glider 3D Model
