@@ -155,19 +155,16 @@ export class SpherePhysicsEngine {
           // Push out of wall
           s.pos.add(norm.clone().multiplyScalar(overlap));
 
-          // Elastic bounce along surface normal
+          // Clean inelastic resolution along surface normal for crisp wall sliding
           const velDot = s.vel.dot(norm);
           if (velDot < 0) {
             const impactForce = Math.abs(velDot);
-            s.vel.sub(norm.clone().multiplyScalar((1 + s.restitution) * velDot));
+            // Cancel momentum into the wall, preserving tangential sliding velocity
+            s.vel.sub(norm.clone().multiplyScalar(velDot));
 
-            // Surface friction against tangent
-            const tangent = s.vel.clone().sub(norm.clone().multiplyScalar(s.vel.dot(norm)));
-            s.vel.sub(tangent.multiplyScalar(s.friction * 0.2));
-
-            if (impactForce > 2.0) {
+            if (impactForce > 3.0) {
               const contactPos = new THREE.Vector3(closestX, closestY, closestZ);
-              this.vfx.createCollisionImpact(contactPos, norm, impactForce * 1.5, 'metal');
+              this.vfx.createCollisionImpact(contactPos, norm, impactForce * 0.8, 'metal');
               fortniteAudio.playFootstep('metal');
             }
           }
@@ -192,11 +189,12 @@ export class SpherePhysicsEngine {
           const velDot = s.vel.dot(norm);
           if (velDot < 0) {
             const impactForce = Math.abs(velDot);
-            s.vel.sub(norm.clone().multiplyScalar((1 + s.restitution) * velDot));
+            // Cancel momentum into cylinder, gliding around curves smoothly
+            s.vel.sub(norm.clone().multiplyScalar(velDot));
 
-            if (impactForce > 2.0) {
+            if (impactForce > 3.0) {
               const contactPos = new THREE.Vector3(col.x + norm.x * col.radius, s.pos.y, col.z + norm.z * col.radius);
-              this.vfx.createCollisionImpact(contactPos, norm, impactForce * 1.5, 'stone');
+              this.vfx.createCollisionImpact(contactPos, norm, impactForce * 0.8, 'stone');
             }
           }
         }

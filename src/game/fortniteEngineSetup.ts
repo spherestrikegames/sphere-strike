@@ -11,6 +11,8 @@ import type { FortniteEngine } from './fortniteEngine';
 import { getBotDifficultyConfig } from './fortniteEngine';
 
 
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+
 export function setupLightingImpl(engine: FortniteEngine) {
   // Dual-color HemisphereLight (crisp ice-blue sky tone, deep slate-earth ground)
   engine.hemiLight = new THREE.HemisphereLight(0xbfe3ff, 0x1e293b, 0.95);
@@ -37,6 +39,15 @@ export function setupLightingImpl(engine: FortniteEngine) {
 
   // Soft Exponential Horizon Fog matching sky-blue
   engine.scene.fog = new THREE.FogExp2(0x87ceeb, 0.0075);
+
+  // Mandatory Studio Environment Reflection (RoomEnvironment) for glossy acrylic & metal materials
+  try {
+    const pmremGenerator = new THREE.PMREMGenerator(engine.renderer);
+    engine.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmremGenerator.dispose();
+  } catch (e) {
+    console.warn('RoomEnvironment generation fallback:', e);
+  }
 }
 
 export function setupGliderImpl(engine: FortniteEngine) {
@@ -91,11 +102,8 @@ export function setupPlayerRigsImpl(engine: FortniteEngine) {
   engine.camera.add(engine.fpsRig);
   engine.scene.add(engine.camera);
 
-  // 3rd Person Character Rig (Uses stylized physical sphere rig in 2v2 Sphere battlegrounds)
-  const isSphereBattleground = engine.selectedMap === 'island_2v2' || engine.mode === '1v1_build_fight';
-  engine.thirdPersonRig = isSphereBattleground
-    ? buildSphereCharacterRig(engine.profile.selectedSkin || 'jonesy', type, rarity, 0x0a84ff)
-    : buildCharacterModel(engine.profile.selectedSkin || 'jonesy', type, rarity);
+  // 3rd Person Character Rig (Uses stylized physical sphere rig with rolling core and gyro rings)
+  engine.thirdPersonRig = buildSphereCharacterRig(engine.profile.selectedSkin || 'jonesy', type, rarity, 0x0a84ff);
 
   // Attach Player Name Tag
   engine.playerNameTag = createNameTagSprite(
@@ -290,8 +298,8 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
 
     engine.bots.push(bot);
 
-    // Character Rig with Name Tag sprite
-    const rig = buildCharacterModel(skin.id, bot.weapon.type, bot.weapon.rarity);
+    // Character Rig with Name Tag sprite (Sphere Character Rig)
+    const rig = buildSphereCharacterRig(skin.id, bot.weapon.type, bot.weapon.rarity);
     rig.root.position.set(x, y, z);
 
     const nameTag = createNameTagSprite(
@@ -316,7 +324,7 @@ export function setupMultiplayerImpl(engine: FortniteEngine) {
       let remote = engine.remotePlayers.get(playerId);
       if (!remote) {
         const skinId = data.skinId || 'jonesy';
-        const rig = buildCharacterModel(skinId, data.activeWeaponType || 'ar', data.weaponRarity || 'epic');
+        const rig = buildSphereCharacterRig(skinId, data.activeWeaponType || 'ar', data.weaponRarity || 'epic');
         engine.scene.add(rig.root);
         remote = {
           state: {

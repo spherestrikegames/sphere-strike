@@ -333,10 +333,62 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
   if (engine.keys['KeyD'] || engine.keys['ArrowRight']) moveDir.add(right);
   if (engine.keys['KeyA'] || engine.keys['ArrowLeft']) moveDir.sub(right);
 
-  if (moveDir.lengthSq() > 0) {
+  // --- COMPETITIVE SPHERE MOVEMENT CONTROLLER ---
+  // Ground acceleration, braking, counter-strafing, and separate horizontal/vertical mechanics
+  const isGrounded = engine.isGrounded;
+  const groundAccel = 85.0; // Rapid acceleration when input applied (m/s^2)
+  const airAccel = 22.0;    // Responsive air steering without losing jump velocity (m/s^2)
+  const groundFriction = 16.0; // Aggressive ground friction for immediate braking (s^-1)
+  const airFriction = 1.2;    // Minimal air drag (s^-1)
+  const counterStrafeMultiplier = 2.6; // Instant direction reversals / jiggle peeking
+  const snapStopThreshold = 0.08; // Eliminates bowling-ball ice slide near cover
+
+  const curVelX = engine.playerVel.x;
+  const curVelZ = engine.playerVel.z;
+  const curSpeed = Math.hypot(curVelX, curVelZ);
+
+  if (moveDir.lengthSq() > 0.001) {
     moveDir.normalize();
-    engine.playerVel.x = moveDir.x * moveSpeed;
-    engine.playerVel.z = moveDir.z * moveSpeed;
+    const targetVelX = moveDir.x * moveSpeed;
+    const targetVelZ = moveDir.z * moveSpeed;
+
+    // Detect if player is counter-strafing (pressing opposite to current velocity)
+    const dot = curSpeed > 0.1 ? (curVelX * moveDir.x + curVelZ * moveDir.z) / curSpeed : 1.0;
+    const isReversing = dot < -0.15;
+
+    if (isGrounded) {
+      if (isReversing) {
+        // Active Counter-Strafing: rapidly cancel momentum and transition into new direction
+        engine.playerVel.x = THREE.MathUtils.damp(curVelX, targetVelX, 28.0, dt);
+        engine.playerVel.z = THREE.MathUtils.damp(curVelZ, targetVelZ, 28.0, dt);
+      } else {
+        // Fast ground acceleration toward target velocity
+        const maxDelta = groundAccel * dt;
+        const diffX = targetVelX - curVelX;
+        const diffZ = targetVelZ - curVelZ;
+        const diffLen = Math.hypot(diffX, diffZ);
+        if (diffLen <= maxDelta) {
+          engine.playerVel.x = targetVelX;
+          engine.playerVel.z = targetVelZ;
+        } else {
+          engine.playerVel.x += (diffX / diffLen) * maxDelta;
+          engine.playerVel.z += (diffZ / diffLen) * maxDelta;
+        }
+      }
+    } else {
+      // In-Air Movement: controlled air acceleration preserving jump momentum
+      const maxDelta = airAccel * dt;
+      const diffX = targetVelX - curVelX;
+      const diffZ = targetVelZ - curVelZ;
+      const diffLen = Math.hypot(diffX, diffZ);
+      if (diffLen <= maxDelta) {
+        engine.playerVel.x = targetVelX;
+        engine.playerVel.z = targetVelZ;
+      } else {
+        engine.playerVel.x += (diffX / diffLen) * maxDelta;
+        engine.playerVel.z += (diffZ / diffLen) * maxDelta;
+      }
+    }
 
     // Emit vibrant speed boost jet flame and plasma orbs when boosting or fast-sprinting
     if (engine.isSpeedBoosting || engine.isSliding) {
@@ -349,8 +401,22 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
       );
     }
   } else {
-    engine.playerVel.x *= 0.78;
-    engine.playerVel.z *= 0.78;
+    // No movement keys held: apply aggressive braking
+    if (isGrounded) {
+      const decay = Math.exp(-groundFriction * dt);
+      engine.playerVel.x *= decay;
+      engine.playerVel.z *= decay;
+
+      // Dead-zone velocity snap to eliminate lingering drift near cover
+      if (Math.hypot(engine.playerVel.x, engine.playerVel.z) < snapStopThreshold) {
+        engine.playerVel.x = 0;
+        engine.playerVel.z = 0;
+      }
+    } else {
+      const decay = Math.exp(-airFriction * dt);
+      engine.playerVel.x *= decay;
+      engine.playerVel.z *= decay;
+    }
   }
 
   if (engine.isGrounded && moveDir.lengthSq() > 0.01) {
@@ -390,15 +456,15 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
   const nextX = engine.playerPos.x + engine.playerVel.x * dt;
   const nextZ = engine.playerPos.z + engine.playerVel.z * dt;
 
-  // Realistic Sphere-on-Environment Collision Resolution with Dynamic Particle Bounces
+  // Realistic Sphere-on-Environment Collision Resolution with Clamped Restitution (No Wall Bouncing)
   const playerSphere = {
     id: 'player_sphere',
     pos: new THREE.Vector3(nextX, engine.playerPos.y, nextZ),
     vel: engine.playerVel,
     radius: engine.sphereRadius || 0.55,
     mass: engine.sphereMass || 1.0,
-    restitution: engine.sphereRestitution || 0.85,
-    friction: engine.sphereFriction || 0.35,
+    restitution: 0.05, // Clamped to 0.05 for clean wall sliding without bouncy pushback
+    friction: 0.85,    // Controlled wall friction
     isGrounded: engine.isGrounded,
     isPlayer: true,
   };
@@ -641,8 +707,77 @@ export function updateCameraAndRigsImpl(engine: FortniteEngine, dt: number) {
       : new THREE.Vector3(1.1, 0.35, 3.2); // +X right shoulder, +Y height, +Z distance
     const camOffset = baseOffset.clone();
     camOffset.applyQuaternion(engine.camera.quaternion);
-    const targetCamPos = engine.playerPos.clone().add(new THREE.Vector3(0, eyeHeight, 0)).add(camOffset);
-    engine.camera.position.lerp(targetCamPos, Math.min(1.0, dt * 16));
+
+    // Upright, yaw-stabilized camera anchor at character eye level
+    const anchorPos = new THREE.Vector3(engine.playerPos.x, engine.playerPos.y + eyeHeight, engine.playerPos.z);
+    let targetCamPos = anchorPos.clone().add(camOffset);
+
+    // CAMERA OBSTRUCTION AVOIDANCE & WALL-CLIPPING PREVENTION
+    // Cast a probe ray from anchor to target camera position against static walls and building pieces
+    const rayDir = new THREE.Vector3().subVectors(targetCamPos, anchorPos);
+    const maxCamDist = rayDir.length();
+    if (maxCamDist > 0.001) {
+      rayDir.normalize();
+      let clampedDist = maxCamDist;
+
+      // 1. Query static environment colliders (walls, buildings, rocks)
+      const nearbyColliders = engine.spatialGrid.queryRay(anchorPos.x, anchorPos.z, targetCamPos.x, targetCamPos.z);
+      const probeBox = new THREE.Box3();
+      const probeHit = new THREE.Vector3();
+      const camRay = new THREE.Ray(anchorPos, rayDir);
+
+      for (let i = 0; i < nearbyColliders.length; i++) {
+        const sc = nearbyColliders[i];
+        if (sc.type === 'box' && sc.minX !== undefined && sc.maxX !== undefined) {
+          probeBox.min.set(sc.minX, sc.minY ?? 0, sc.minZ!);
+          probeBox.max.set(sc.maxX, sc.maxY ?? 100, sc.maxZ!);
+          if (camRay.intersectBox(probeBox, probeHit)) {
+            const d = anchorPos.distanceTo(probeHit);
+            if (d < clampedDist) {
+              clampedDist = Math.max(0.55, d - 0.3); // 30cm safety buffer inside walls
+            }
+          }
+        } else if (sc.type === 'cylinder' && sc.x !== undefined && sc.z !== undefined && sc.radius !== undefined) {
+          const r = sc.radius;
+          probeBox.min.set(sc.x - r, sc.minY ?? 0, sc.z - r);
+          probeBox.max.set(sc.x + r, sc.maxY ?? 100, sc.z + r);
+          if (camRay.intersectBox(probeBox, probeHit)) {
+            const d = anchorPos.distanceTo(probeHit);
+            if (d < clampedDist) {
+              clampedDist = Math.max(0.55, d - 0.3);
+            }
+          }
+        }
+      }
+
+      // 2. Query player building pieces (walls, ramps)
+      const nearbyPieces = engine.spatialGrid.queryBuildingPiecesRay(anchorPos.x, anchorPos.z, targetCamPos.x, targetCamPos.z);
+      for (let i = 0; i < nearbyPieces.length; i++) {
+        const piece = nearbyPieces[i];
+        probeBox.min.set(piece.x - 2.1, piece.y - 0.2, piece.z - 2.1);
+        probeBox.max.set(piece.x + 2.1, piece.y + 4.2, piece.z + 2.1);
+        if (camRay.intersectBox(probeBox, probeHit)) {
+          const d = anchorPos.distanceTo(probeHit);
+          if (d < clampedDist) {
+            clampedDist = Math.max(0.55, d - 0.3);
+          }
+        }
+      }
+
+      // Recompute target camera pos with obstacle clearance
+      targetCamPos = anchorPos.clone().addScaledVector(rayDir, clampedDist);
+
+      // Floor clearance check: ensure camera never dips below terrain
+      const terrainAtCam = engine.getGroundElevationAt(targetCamPos.x, targetCamPos.z, targetCamPos.y);
+      if (targetCamPos.y < terrainAtCam + 0.35) {
+        targetCamPos.y = terrainAtCam + 0.35;
+      }
+    }
+
+    // Smooth exponential damping to eliminate camera oscillation and jitter
+    engine.camera.position.x = THREE.MathUtils.damp(engine.camera.position.x, targetCamPos.x, 22.0, dt);
+    engine.camera.position.y = THREE.MathUtils.damp(engine.camera.position.y, targetCamPos.y, 22.0, dt);
+    engine.camera.position.z = THREE.MathUtils.damp(engine.camera.position.z, targetCamPos.z, 22.0, dt);
 
     if (engine.thirdPersonRig) {
       engine.thirdPersonRig.root.position.copy(engine.playerPos);

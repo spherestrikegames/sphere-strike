@@ -689,15 +689,25 @@ export function buildSphereCharacterRig(
   // Dummy groups to satisfy CharacterMeshRig interface
   const dummyGroup = new THREE.Group();
 
-  const updateAnimation = (time: number, isMoving: boolean) => {
-    // Gyro rotation animation
-    gyroRing1.rotation.z = time * 2.5;
-    gyroRing2.rotation.x = time * 1.8;
-    sphereMesh.rotation.y = time * 1.2;
+  let rollPitch = 0;
+  const updateAnimation = (time: number, isMoving: boolean, _isSwinging?: boolean, isAiming?: boolean) => {
+    // Gyro orbital rings rotate smoothly on independent axes
+    gyroRing1.rotation.z = time * 2.2;
+    gyroRing2.rotation.x = time * 1.6;
+
     if (isMoving) {
-      sphereMesh.position.y = 1.15 + Math.sin(time * 16) * 0.05;
+      // Dynamic forward rolling rotation along movement
+      rollPitch += 0.22;
+      sphereMesh.rotation.x = rollPitch;
+      sphereMesh.position.y = 1.15 + Math.sin(time * 18) * 0.04;
     } else {
-      sphereMesh.position.y = 1.15 + Math.sin(time * 3) * 0.03;
+      sphereMesh.position.y = 1.15 + Math.sin(time * 3) * 0.02;
+    }
+
+    if (isAiming) {
+      weaponSlot.position.set(0.38, 1.18, 0.42);
+    } else {
+      weaponSlot.position.set(0.48, 1.05, 0.25);
     }
   };
 

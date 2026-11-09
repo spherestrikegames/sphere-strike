@@ -13,52 +13,71 @@ import { ISLAND_POIS } from '../data/mapData';
 export function getStrikeIslandElevation(x: number, z: number): number {
   // 1. Far North: Snowfall Mountain (Summit at x: 0, z: -320)
   const distSnow = Math.hypot(x - 0, z - -320);
-  if (distSnow < 110) {
-    const norm = distSnow / 110;
-    // Summit plateau & glacial crags
+  if (distSnow < 115) {
+    const norm = distSnow / 115;
+    // Multi-tier terraced summit & glacial combat crags
     const mountainShape = Math.cos(norm * (Math.PI / 2));
     const noise = Math.sin(x * 0.08) * Math.cos(z * 0.08) * 2.5;
     return Math.max(0, 38.0 * Math.pow(mountainShape, 1.4) + noise);
   }
 
-  // 2. Center Ridge & Underground Bunker Bluff (x: -20, z: 80)
+  // 2. Central Tactical Combat Ridge (x: 110 to 180, z: -30 to 120)
+  // Elevated +8.5m ridge with graded ramps providing high-ground combat overlooking Strike City & Desert
+  if (x > 110 && x < 180 && z > -30 && z < 120) {
+    const rx = (x - 145) / 35;
+    const rz = (z - 45) / 75;
+    const ridgeProfile = Math.max(0, 1 - rx * rx) * Math.max(0, 1 - rz * rz * rz * rz);
+    if (ridgeProfile > 0) {
+      return 8.5 * ridgeProfile;
+    }
+  }
+
+  // 3. Center Ridge & Underground Bunker Bluff (x: -20, z: 80)
   const distBunkerRidge = Math.hypot(x - -20, z - 80);
   if (distBunkerRidge < 65) {
     const ridgeNorm = distBunkerRidge / 65;
     return 13.5 * Math.cos(ridgeNorm * (Math.PI / 2));
   }
 
-  // 3. North-West: Pinewood Forest Hills (x: -240, z: -200)
+  // 4. North-West: Pinewood Forest Hills & Catwalk Bluff (x: -240, z: -200)
   const distForest = Math.hypot(x - -240, z - -200);
-  if (distForest < 90) {
-    const fNorm = distForest / 90;
-    return 7.5 * Math.cos(fNorm * (Math.PI / 2)) + Math.sin(x * 0.05) * 1.2;
+  if (distForest < 95) {
+    const fNorm = distForest / 95;
+    return 8.5 * Math.cos(fNorm * (Math.PI / 2)) + Math.sin(x * 0.05) * 1.5;
   }
 
-  // 4. North-East: Military Base Plateau (x: 250, z: -230)
+  // 5. West Lookout Terrace overlooking Racing Circuit (x: -160, z: -130)
+  const distLookout = Math.hypot(x - -160, z - -130);
+  if (distLookout < 45) {
+    const lNorm = distLookout / 45;
+    return 7.0 * Math.cos(lNorm * (Math.PI / 2));
+  }
+
+  // 6. North-East: Military Base Plateau (x: 250, z: -230)
   const distMil = Math.hypot(x - 250, z - -230);
-  if (distMil < 75) {
-    if (distMil < 55) return 5.0; // Flat combat plateau inside compound
-    const mNorm = (distMil - 55) / 20;
-    return 5.0 * (1 - mNorm);
+  if (distMil < 80) {
+    if (distMil < 58) return 5.5; // Flat fortified combat plateau inside compound
+    const mNorm = (distMil - 58) / 22;
+    return 5.5 * (1 - mNorm);
   }
 
-  // 5. South-East: Dusty Desert Mesas & Dunes (x: 220, z: 220)
+  // 7. South-East: Dusty Desert Mesas, Rolling Dunes & Sunken Canyons (x: 220, z: 220)
   const distDesert = Math.hypot(x - 220, z - 220);
-  if (distDesert < 95) {
-    const dNorm = distDesert / 95;
-    const dunes = Math.sin(x * 0.04 + z * 0.03) * 3.2 + Math.cos(x * 0.02) * 1.8;
-    return Math.max(0.5, 6.0 * Math.cos(dNorm * (Math.PI / 2)) + dunes);
+  if (distDesert < 105) {
+    const dNorm = distDesert / 105;
+    const dunes = Math.sin(x * 0.045 + z * 0.035) * 4.2 + Math.cos(x * 0.02) * 2.2;
+    return Math.max(0.8, 7.5 * Math.cos(dNorm * (Math.PI / 2)) + dunes);
   }
 
-  // 6. South-Central: Lost Temple Stepped Terrace (x: 80, z: 320)
+  // 8. South-Central: Lost Temple Stepped Terraces (x: 80, z: 320)
   const distTemple = Math.hypot(x - 80, z - 320);
-  if (distTemple < 70) {
-    if (distTemple < 45) return 8.0;
-    return 8.0 * (1 - (distTemple - 45) / 25);
+  if (distTemple < 75) {
+    if (distTemple < 48) return 9.5; // Raised temple summit terrace
+    const tStep = Math.floor((1 - (distTemple - 48) / 27) * 3) / 3;
+    return 9.5 * Math.max(0, tStep);
   }
 
-  // 7. West Shoreline: Coastal Village & Ocean Beach (x < -240)
+  // 9. West Shoreline: Coastal Village & Ocean Beach (x < -240)
   if (x < -240) {
     const beachDist = -240 - x;
     if (beachDist < 60) {
@@ -67,12 +86,11 @@ export function getStrikeIslandElevation(x: number, z: number): number {
     return -1.5; // Ocean water depth
   }
 
-  // 8. River Canyon traversing from mountain lake to west coast
-  // S-curved river bed
+  // 10. Deep Sunken River Canyon traversing island from mountain lake to west coast
   const riverZ = -140 + Math.sin(x * 0.015) * 45;
   const riverDist = Math.abs(z - riverZ);
-  if (x > -230 && x < 120 && riverDist < 18) {
-    return -3.2 * Math.cos((riverDist / 18) * (Math.PI / 2));
+  if (x > -230 && x < 120 && riverDist < 20) {
+    return -3.4 * Math.cos((riverDist / 20) * (Math.PI / 2));
   }
 
   // Flat graded floors for urban zones
@@ -89,8 +107,8 @@ export function getStrikeIslandElevation(x: number, z: number): number {
     return 1.5;
   }
 
-  // Gentle natural rolling terrain across the rest of the island
-  return Math.sin(x * 0.025) * Math.cos(z * 0.025) * 1.8 + Math.sin(x * 0.01) * 0.8;
+  // Natural rolling terrain with undulations, small natural ramps & cover crests
+  return Math.sin(x * 0.03) * Math.cos(z * 0.03) * 2.4 + Math.sin(x * 0.012) * 1.2;
 }
 
 /**
