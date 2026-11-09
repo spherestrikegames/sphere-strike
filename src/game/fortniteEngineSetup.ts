@@ -68,14 +68,7 @@ export function setupGliderImpl(engine: FortniteEngine) {
 }
 
 export function setupStormImpl(engine: FortniteEngine) {
-  const stormGeo = new THREE.CylinderGeometry(
-    engine.storm.currentRadius,
-    engine.storm.currentRadius,
-    220,
-    48,
-    1,
-    true
-  );
+  const stormGeo = new THREE.CylinderGeometry(1.0, 1.0, 260, 64, 1, true);
   const stormMat = new THREE.MeshBasicMaterial({
     color: 0x9333ea,
     transparent: true,
@@ -84,6 +77,7 @@ export function setupStormImpl(engine: FortniteEngine) {
   });
   engine.stormCylinderMesh = new THREE.Mesh(stormGeo, stormMat);
   engine.stormCylinderMesh.position.set(engine.storm.currentCenterX, 100, engine.storm.currentCenterZ);
+  engine.stormCylinderMesh.scale.set(engine.storm.currentRadius, 1, engine.storm.currentRadius);
   engine.scene.add(engine.stormCylinderMesh);
 }
 

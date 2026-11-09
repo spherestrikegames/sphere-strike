@@ -107,6 +107,8 @@ export interface EngineCallbacks {
   onGoldChange?: (gold: number) => void;
   onEliminationBanner?: (data: EliminationBannerData) => void;
   onItemCollected?: (item: PickupNotification) => void;
+  onLocationChange?: (locationName: string) => void;
+  onPlayerPositionUpdate?: (coords: { x: number; z: number; rotationY: number }) => void;
 }
 
 interface ShellCasing {
@@ -461,7 +463,7 @@ export class FortniteEngine {
       slot5: 'medkit',
     };
 
-    if (this.mode === '1v1_build_fight') {
+    if (this.mode === '1v1' || this.mode === '1v1_build_fight') {
       this.maxHealth = 300;
       this.maxShield = 300;
       this.health = 300;
@@ -486,16 +488,30 @@ export class FortniteEngine {
       this.activeSlot = 1;
     } else {
       const mapIdx = MapManager.resolveMapIndex(this.selectedMap);
-      if (mapIdx === 1) {
+      if (mapIdx === 0) {
+        // Drop high above Strike Island (840m Island) with skydiving/gliding flight reach to all 10 POIs
+        this.playerPos.set((Math.random() - 0.5) * 80, 260, (Math.random() - 0.5) * 80);
+        this.storm.currentRadius = 520;
+        this.storm.targetRadius = 360;
+        this.storm.currentCenterX = 0;
+        this.storm.currentCenterZ = 0;
+        const targetPoi = ISLAND_POIS[Math.floor(Math.random() * ISLAND_POIS.length)];
+        this.storm.targetCenterX = targetPoi ? targetPoi.x : 0;
+        this.storm.targetCenterZ = targetPoi ? targetPoi.z : 0;
+      } else if (mapIdx === 2) {
         // Drop straight into Apex Metropolis Avenue Grid
         this.playerPos.set((Math.random() - 0.5) * 30, 220, (Math.random() - 0.5) * 30);
+        this.storm.currentRadius = 290;
+        this.storm.targetRadius = 190;
         this.storm.currentCenterX = 0;
         this.storm.currentCenterZ = 0;
         this.storm.targetCenterX = 0;
         this.storm.targetCenterZ = 0;
-      } else if (mapIdx === 2) {
+      } else if (mapIdx === 3) {
         // Drop into Harvest Ridge Countryside
         this.playerPos.set((Math.random() - 0.5) * 30, 220, -10 + (Math.random() - 0.5) * 30);
+        this.storm.currentRadius = 290;
+        this.storm.targetRadius = 190;
         this.storm.currentCenterX = 0;
         this.storm.currentCenterZ = -10;
         this.storm.targetCenterX = 0;
@@ -503,6 +519,8 @@ export class FortniteEngine {
       } else {
         // Drop into Pinecrest Suburb Residential Loop
         this.playerPos.set((Math.random() - 0.5) * 30, 220, 10 + (Math.random() - 0.5) * 30);
+        this.storm.currentRadius = 290;
+        this.storm.targetRadius = 190;
         this.storm.currentCenterX = 0;
         this.storm.currentCenterZ = 10;
         this.storm.targetCenterX = 0;
@@ -561,7 +579,7 @@ export class FortniteEngine {
     // Setup World & Lighting
     this.setupLighting();
 
-    if (this.mode === '1v1_build_fight') {
+    if (this.mode === '1v1_build_fight' || this.mode === '1v1') {
       const arena = build1v1Arena(this.scene);
       this.harvestables = arena.harvestables;
       this.harvestableMeshes = arena.harvestableMeshes;
@@ -597,18 +615,41 @@ export class FortniteEngine {
       this.upgradeBenches = mapData.upgradeBenches;
 
       // Position drop above the map spawn
-      this.playerPos.set(mapData.spawnPoint.x, 220, mapData.spawnPoint.z);
-      this.storm.currentCenterX = mapData.spawnPoint.x;
-      this.storm.currentCenterZ = mapData.spawnPoint.z;
-      this.storm.targetCenterX = mapData.spawnPoint.x;
-      this.storm.targetCenterZ = mapData.spawnPoint.z;
+      if (mapIndex === 0) {
+        this.playerPos.set((Math.random() - 0.5) * 80, 260, (Math.random() - 0.5) * 80);
+        this.storm.currentRadius = 520;
+        this.storm.targetRadius = 360;
+        this.storm.currentCenterX = 0;
+        this.storm.currentCenterZ = 0;
+        const targetPoi = ISLAND_POIS[Math.floor(Math.random() * ISLAND_POIS.length)];
+        this.storm.targetCenterX = targetPoi ? targetPoi.x : 0;
+        this.storm.targetCenterZ = targetPoi ? targetPoi.z : 0;
+      } else {
+        this.playerPos.set(mapData.spawnPoint.x, 220, mapData.spawnPoint.z);
+        this.storm.currentRadius = 290;
+        this.storm.targetRadius = 190;
+        this.storm.currentCenterX = mapData.spawnPoint.x;
+        this.storm.currentCenterZ = mapData.spawnPoint.z;
+        this.storm.targetCenterX = mapData.spawnPoint.x;
+        this.storm.targetCenterZ = mapData.spawnPoint.z;
+      }
+
+      if (this.mode === 'practice') {
+        this.wood = 999;
+        this.stone = 999;
+        this.metal = 999;
+        this.storm.currentRadius = 99999;
+        this.storm.targetRadius = 99999;
+        this.storm.isShrinking = false;
+        this.storm.dps = 0;
+      }
     }
 
     // Setup Glider 3D Model
     this.setupGlider();
 
     // Setup Storm Cylinder
-    if (this.mode !== '1v1_build_fight') {
+    if (this.mode !== '1v1_build_fight' && this.mode !== '1v1' && this.mode !== 'practice') {
       this.setupStorm();
     }
 
@@ -627,10 +668,12 @@ export class FortniteEngine {
     this.scene.add(this.damageNumberSprites);
 
     // Spawn AI Bots (AI Knockout mode gets 24 bots, 1v1 Arena gets 1 opponent bot, Battle Royale gets 0)
-    if (this.mode === 'first_person_royale') {
+    if (this.mode === 'first_person_royale' || this.mode === 'free_for_all') {
       this.spawnBots(24);
-    } else if (this.mode === '1v1_build_fight') {
+    } else if (this.mode === '1v1' || this.mode === '1v1_build_fight') {
       this.spawnBots(1);
+    } else if (this.mode === '2v2') {
+      this.spawnBots(2);
     } else {
       this.spawnBots(0);
     }

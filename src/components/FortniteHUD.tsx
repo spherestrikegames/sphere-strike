@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { PlayerCharacterAvatar } from './PlayerCharacterAvatar';
 import {
   FortniteWeapon,
@@ -17,6 +17,7 @@ import {
   BattleRoyaleDuelState,
 } from '../types';
 import { RARITY_COLORS } from '../data/fortniteData';
+import { ISLAND_POIS, IslandPOI } from '../data/mapData';
 import {
   Shield,
   Heart,
@@ -42,6 +43,11 @@ import {
   RotateCcw,
   Trophy,
   Wifi,
+  MapPin,
+  Compass,
+  X,
+  Flag,
+  Layers,
 } from 'lucide-react';
 
 interface FortniteHUDProps {
@@ -93,6 +99,8 @@ interface FortniteHUDProps {
   onOpenShop?: () => void;
   onOpenSettings?: () => void;
   onReturnToLobby?: () => void;
+  playerLocationName?: string;
+  playerCoords?: { x: number; z: number; rotationY?: number };
   onSelectSlot: (index: number) => void;
   onTogglePerspective: () => void;
   onRequestPointerLock: () => void;
@@ -145,10 +153,35 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
   onOpenShop,
   onOpenSettings,
   onReturnToLobby,
+  playerLocationName,
+  playerCoords,
   onSelectSlot,
   onTogglePerspective,
   onRequestPointerLock,
 }) => {
+  const [isMapExpanded, setIsMapExpanded] = useState<boolean>(false);
+  const [waypoint, setWaypoint] = useState<{ x: number; z: number } | null>(null);
+  const [selectedPoi, setSelectedPoi] = useState<IslandPOI | null>(null);
+
+  // Tactical Map Keyboard Toggle ([M] & [ESC])
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.code === 'KeyM') {
+        setIsMapExpanded((prev) => {
+          const next = !prev;
+          if (next && document.pointerLockElement) {
+            document.exitPointerLock?.();
+          }
+          return next;
+        });
+      } else if (e.code === 'Escape' && isMapExpanded) {
+        setIsMapExpanded(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMapExpanded]);
   const is1v1Mode = gameMode === '1v1_build_fight';
   const effectiveMaxHealth = propMaxHealth ?? (is1v1Mode ? 300 : 250);
   const effectiveMaxShield = propMaxShield ?? (is1v1Mode ? 300 : 250);
@@ -585,7 +618,14 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
         {/* Right: Circular Glass-Rimmed Minimap & Storm Timer */}
         <div className="flex flex-col items-end gap-2.5">
           {/* Circular Glass-Rimmed Minimap Frame */}
-          <div className="liquid-glass w-24 h-24 sm:w-28 sm:h-28 rounded-full flex items-center justify-center relative overflow-hidden shadow-2xl border border-white/25">
+          <div
+            onClick={() => {
+              if (document.pointerLockElement) document.exitPointerLock?.();
+              setIsMapExpanded(true);
+            }}
+            title="Expand Full Tactical Map [M]"
+            className="pointer-events-auto liquid-glass w-24 h-24 sm:w-28 sm:h-28 rounded-full flex items-center justify-center relative overflow-hidden shadow-2xl border border-white/25 cursor-pointer hover:border-cyan-400/80 hover:scale-105 transition-all group"
+          >
             {/* Internal Rings */}
             <div className="absolute inset-2.5 rounded-full border border-white/15" />
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -595,11 +635,37 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
             {/* North Pip */}
             <span className="absolute top-1.5 text-[9px] font-mono font-black text-amber-400">N</span>
             {/* Player Center Blip */}
-            <div className="w-3 h-3 text-cyan-400 font-black text-xs flex items-center justify-center z-10 drop-shadow-[0_0_8px_#0a84ff]">
+            <div
+              className="w-3 h-3 text-cyan-400 font-black text-xs flex items-center justify-center z-10 drop-shadow-[0_0_8px_#0a84ff] transition-transform"
+              style={{
+                transform: `rotate(${Math.round(((playerCoords?.rotationY || 0) * 180) / Math.PI + 180)}deg)`,
+              }}
+            >
               ▲
             </div>
             {/* Safe Zone Ring */}
             <div className="absolute w-14 h-14 rounded-full border border-emerald-400/60 animate-pulse pointer-events-none" />
+            {/* Hover Expand Label */}
+            <div className="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-full">
+              <span className="text-[10px] font-mono font-black text-cyan-300">
+                [M] MAP
+              </span>
+            </div>
+          </div>
+
+          {/* Dynamic Location Badge */}
+          <div
+            onClick={() => {
+              if (document.pointerLockElement) document.exitPointerLock?.();
+              setIsMapExpanded(true);
+            }}
+            title="Click to view all Island Locations [M]"
+            className="pointer-events-auto liquid-glass flex items-center gap-1.5 px-3 py-1 rounded-[14px] shadow-lg border border-cyan-400/40 cursor-pointer hover:border-cyan-300 transition-all animate-in fade-in duration-300"
+          >
+            <span className="text-amber-400 text-xs">📍</span>
+            <span className="font-mono text-[11px] font-black text-cyan-200 tracking-wider uppercase">
+              {playerLocationName || 'STRIKE ISLAND'}
+            </span>
           </div>
 
           {/* Storm Status or 1v1 Arena Badge */}
@@ -645,6 +711,18 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
                 <span>60 FPS</span>
               </div>
             )}
+
+            <button
+              onClick={() => {
+                if (document.pointerLockElement) document.exitPointerLock?.();
+                setIsMapExpanded(true);
+              }}
+              title="Open Island Tactical Map [M]"
+              className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-700/80 hover:bg-cyan-600 border border-cyan-400 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] active:scale-95 cursor-pointer"
+            >
+              <Compass className="w-3.5 h-3.5 text-cyan-200" />
+              <span>[M] MAP</span>
+            </button>
 
             <button
               onClick={onTogglePerspective}
@@ -1344,6 +1422,500 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
           </div>
         </div>
       </div>
+
+      {/* =========================================================================
+          PART 17: FULL-SCREEN INTERACTIVE TACTICAL MAP RADAR OVERLAY MODAL
+          ========================================================================= */}
+      {isMapExpanded && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5 bg-slate-950/85 backdrop-blur-2xl pointer-events-auto select-none animate-in fade-in zoom-in-95 duration-150">
+          <div className="relative w-full max-w-5xl max-h-[94vh] flex flex-col rounded-3xl border border-white/25 shadow-[0_25px_80px_rgba(0,0,0,0.9)] bg-gradient-to-b from-[#0e1626]/95 via-[#090d17]/95 to-[#06080f]/95 overflow-hidden">
+            {/* Header: Tactical Island Telemetry & Controls */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/15 bg-white/5 backdrop-blur-md">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                  <Compass className="w-5 h-5 animate-spin" style={{ animationDuration: '30s' }} />
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-display font-black text-base sm:text-lg text-white tracking-wider uppercase">
+                      TACTICAL SATELLITE MAP
+                    </h2>
+                    <span className="text-[10px] font-mono font-black text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-500/30">
+                      840m × 840m
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-400 font-mono">
+                    SECTOR: <span className="text-amber-400 font-bold">{playerLocationName || 'STRIKE ISLAND'}</span> • COORDS: [X: {Math.round(playerCoords?.x || 0)}, Z: {Math.round(playerCoords?.z || 0)}]
+                  </span>
+                </div>
+              </div>
+
+              {/* Status Badges & Close Button */}
+              <div className="flex items-center gap-3">
+                {/* Storm Countdown Pill */}
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl bg-purple-950/70 border border-purple-500/40 text-xs font-mono font-bold text-purple-200">
+                  <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
+                  <span>
+                    STORM {storm.isShrinking ? 'CLOSING' : `PHASE ${storm.phase}/${storm.maxPhases}`}:{' '}
+                    {Math.floor(storm.timeRemaining / 60)}:
+                    {(Math.floor(storm.timeRemaining) % 60).toString().padStart(2, '0')}
+                  </span>
+                </div>
+
+                {/* Alive Players */}
+                <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900 border border-white/15 text-xs font-mono font-bold text-white">
+                  <Users className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>{playersLeft} ALIVE</span>
+                </div>
+
+                {/* Close Button */}
+                <button
+                  onClick={() => setIsMapExpanded(false)}
+                  title="Close Map [ESC / M]"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/80 hover:bg-rose-500 border border-rose-400 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                  <span className="hidden sm:inline">[M] CLOSE</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Map Body: Interactive SVG Radar + Side Intel Drawer */}
+            <div className="flex-1 overflow-y-auto flex flex-col md:flex-row gap-4 p-4">
+              {/* Radar Map Canvas Container */}
+              <div className="relative flex-1 flex items-center justify-center bg-slate-950/80 rounded-2xl border border-white/15 overflow-hidden shadow-inner p-1 group">
+                <svg
+                  viewBox="0 0 840 840"
+                  className="w-full h-auto max-h-[62vh] aspect-square cursor-crosshair rounded-xl overflow-hidden select-none"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const rx = (e.clientX - rect.left) / rect.width;
+                    const rz = (e.clientY - rect.top) / rect.height;
+                    const wx = Math.round(rx * 840 - 420);
+                    const wz = Math.round(rz * 840 - 420);
+                    setWaypoint({ x: wx, z: wz });
+                  }}
+                >
+                  <defs>
+                    {/* Ocean Perimeter Gradient */}
+                    <radialGradient id="islandOcean" cx="50%" cy="50%" r="50%">
+                      <stop offset="68%" stopColor="#0d1b2a" />
+                      <stop offset="85%" stopColor="#081422" />
+                      <stop offset="100%" stopColor="#040b14" />
+                    </radialGradient>
+
+                    {/* Biome Color Gradients */}
+                    <radialGradient id="snowBiome" cx="50%" cy="12%" r="28%">
+                      <stop offset="0%" stopColor="#334155" stopOpacity="0.9" />
+                      <stop offset="100%" stopColor="#1e293b" stopOpacity="0.0" />
+                    </radialGradient>
+
+                    <radialGradient id="desertBiome" cx="76%" cy="76%" r="28%">
+                      <stop offset="0%" stopColor="#78350f" stopOpacity="0.75" />
+                      <stop offset="100%" stopColor="#451a03" stopOpacity="0.0" />
+                    </radialGradient>
+
+                    <radialGradient id="forestBiome" cx="22%" cy="26%" r="28%">
+                      <stop offset="0%" stopColor="#064e3b" stopOpacity="0.8" />
+                      <stop offset="100%" stopColor="#022c22" stopOpacity="0.0" />
+                    </radialGradient>
+
+                    <radialGradient id="coastalBiome" cx="16%" cy="58%" r="22%">
+                      <stop offset="0%" stopColor="#0e7490" stopOpacity="0.6" />
+                      <stop offset="100%" stopColor="#155e75" stopOpacity="0.0" />
+                    </radialGradient>
+
+                    <radialGradient id="templeBiome" cx="60%" cy="88%" r="22%">
+                      <stop offset="0%" stopColor="#581c87" stopOpacity="0.6" />
+                      <stop offset="100%" stopColor="#3b0764" stopOpacity="0.0" />
+                    </radialGradient>
+
+                    {/* Storm Glow Filter */}
+                    <filter id="stormGlow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feGaussianBlur stdDeviation="6" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                  </defs>
+
+                  {/* Ocean Backdrop */}
+                  <rect width="840" height="840" fill="url(#islandOcean)" />
+
+                  {/* Biome Region Overlays */}
+                  <rect width="840" height="840" fill="url(#snowBiome)" />
+                  <rect width="840" height="840" fill="url(#desertBiome)" />
+                  <rect width="840" height="840" fill="url(#forestBiome)" />
+                  <rect width="840" height="840" fill="url(#coastalBiome)" />
+                  <rect width="840" height="840" fill="url(#templeBiome)" />
+
+                  {/* Grid Lines (Sectors A1 to H8) */}
+                  {[105, 210, 315, 420, 525, 630, 735].map((pos) => (
+                    <g key={pos}>
+                      <line x1={pos} y1="0" x2={pos} y2="840" stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="3 4" />
+                      <line x1="0" y1={pos} x2="840" y2={pos} stroke="rgba(255,255,255,0.08)" strokeWidth="1" strokeDasharray="3 4" />
+                    </g>
+                  ))}
+
+                  {/* Concentric Distance Rings From Island Center */}
+                  {[100, 200, 300, 400].map((radius) => (
+                    <circle
+                      key={radius}
+                      cx="420"
+                      cy="420"
+                      r={radius}
+                      fill="none"
+                      stroke="rgba(6,182,212,0.15)"
+                      strokeWidth="1"
+                      strokeDasharray="4 6"
+                    />
+                  ))}
+
+                  {/* Central River Chasm SVG Path */}
+                  <path
+                    d="M 420 120 Q 390 260 420 400 T 400 580 Q 380 700 370 820"
+                    fill="none"
+                    stroke="#0284c7"
+                    strokeWidth="10"
+                    strokeOpacity="0.45"
+                    strokeLinecap="round"
+                  />
+
+                  {/* Two-Lane Main Highway Loop Path */}
+                  <path
+                    d="M 180 220 L 420 100 L 670 190 L 640 640 L 500 740 L 340 700 L 140 500 L 260 390 L 480 380 Z"
+                    fill="none"
+                    stroke="#334155"
+                    strokeWidth="14"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  {/* Highway Yellow Center Divider */}
+                  <path
+                    d="M 180 220 L 420 100 L 670 190 L 640 640 L 500 740 L 340 700 L 140 500 L 260 390 L 480 380 Z"
+                    fill="none"
+                    stroke="#f59e0b"
+                    strokeWidth="2"
+                    strokeDasharray="6 8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {/* Bridge Crossings over River */}
+                  <line x1="400" y1="395" x2="440" y2="405" stroke="#94a3b8" strokeWidth="12" strokeLinecap="square" />
+                  <line x1="380" y1="575" x2="420" y2="585" stroke="#94a3b8" strokeWidth="12" strokeLinecap="square" />
+
+                  {/* Active Storm Shrinking Wall Ring */}
+                  <circle
+                    cx={storm.currentCenterX + 420}
+                    cy={storm.currentCenterZ + 420}
+                    r={Math.max(0, storm.currentRadius)}
+                    fill="rgba(168, 85, 247, 0.08)"
+                    stroke="#c084fc"
+                    strokeWidth="4"
+                    filter="url(#stormGlow)"
+                  />
+
+                  {/* Next Storm Safe Zone Eye Ring */}
+                  <circle
+                    cx={storm.targetCenterX + 420}
+                    cy={storm.targetCenterZ + 420}
+                    r={Math.max(0, storm.targetRadius)}
+                    fill="rgba(16, 185, 129, 0.08)"
+                    stroke="#10b981"
+                    strokeWidth="2.5"
+                    strokeDasharray="8 6"
+                  />
+                  {/* Safe Zone Center Crosshair */}
+                  <g transform={`translate(${storm.targetCenterX + 420}, ${storm.targetCenterZ + 420})`}>
+                    <circle r="4" fill="#10b981" />
+                    <line x1="-10" y1="0" x2="10" y2="0" stroke="#10b981" strokeWidth="1.5" />
+                    <line x1="0" y1="-10" x2="0" y2="10" stroke="#10b981" strokeWidth="1.5" />
+                  </g>
+
+                  {/* Dotted Path from Player to Waypoint */}
+                  {waypoint && (
+                    <line
+                      x1={(playerCoords?.x || 0) + 420}
+                      y1={(playerCoords?.z || 0) + 420}
+                      x2={waypoint.x + 420}
+                      y2={waypoint.z + 420}
+                      stroke="#fbbf24"
+                      strokeWidth="2.5"
+                      strokeDasharray="6 4"
+                    />
+                  )}
+
+                  {/* 10 Named POI Pins */}
+                  {ISLAND_POIS.map((poi) => {
+                    const sx = poi.x + 420;
+                    const sy = poi.z + 420;
+                    const isSelected = selectedPoi?.id === poi.id;
+                    const distFromPlayer = Math.round(
+                      Math.hypot((playerCoords?.x || 0) - poi.x, (playerCoords?.z || 0) - poi.z)
+                    );
+
+                    return (
+                      <g
+                        key={poi.id}
+                        transform={`translate(${sx}, ${sy})`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPoi(poi);
+                          setWaypoint({ x: poi.x, z: poi.z });
+                        }}
+                        className="cursor-pointer group/poi"
+                      >
+                        {/* Glow halo on hover or selection */}
+                        <circle
+                          r={isSelected ? 22 : 16}
+                          fill={poi.color}
+                          fillOpacity={isSelected ? 0.35 : 0.15}
+                          stroke={poi.color}
+                          strokeWidth={isSelected ? 2 : 1}
+                          className="transition-all"
+                        />
+
+                        {/* POI Icon Emoji */}
+                        <text
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={isSelected ? "18" : "14"}
+                          className="transition-all select-none"
+                        >
+                          {poi.icon}
+                        </text>
+
+                        {/* Name Banner */}
+                        <rect
+                          x="-48"
+                          y="15"
+                          width="96"
+                          height="18"
+                          rx="5"
+                          fill="rgba(10, 15, 26, 0.88)"
+                          stroke={isSelected ? '#38bdf8' : 'rgba(255, 255, 255, 0.25)'}
+                          strokeWidth="1"
+                        />
+                        <text
+                          x="0"
+                          y="27"
+                          textAnchor="middle"
+                          fill="#ffffff"
+                          fontSize="9"
+                          fontWeight="bold"
+                          fontFamily="sans-serif"
+                          className="select-none"
+                        >
+                          {poi.name}
+                        </text>
+
+                        {/* Chest count badge */}
+                        <rect
+                          x="22"
+                          y="-18"
+                          width="24"
+                          height="13"
+                          rx="3"
+                          fill="#f59e0b"
+                        />
+                        <text
+                          x="34"
+                          y="-9"
+                          textAnchor="middle"
+                          fill="#0f172a"
+                          fontSize="8"
+                          fontWeight="900"
+                          fontFamily="monospace"
+                        >
+                          {poi.chestsCount}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Waypoint Marker Pin */}
+                  {waypoint && (
+                    <g transform={`translate(${waypoint.x + 420}, ${waypoint.z + 420})`}>
+                      <circle r="14" fill="rgba(245, 158, 11, 0.3)" stroke="#f59e0b" strokeWidth="2" />
+                      <circle r="5" fill="#f59e0b" />
+                      <text x="0" y="-16" textAnchor="middle" fill="#f59e0b" fontSize="12" fontWeight="black" fontFamily="monospace">
+                        📍 WAYPOINT
+                      </text>
+                      <text x="0" y="24" textAnchor="middle" fill="#ffffff" fontSize="10" fontWeight="bold" fontFamily="monospace">
+                        {Math.round(Math.hypot((playerCoords?.x || 0) - waypoint.x, (playerCoords?.z || 0) - waypoint.z))}m
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Local Player Marker */}
+                  <g
+                    transform={`translate(${(playerCoords?.x || 0) + 420}, ${(playerCoords?.z || 0) + 420})`}
+                  >
+                    {/* Sonar Pulse */}
+                    <circle r="18" fill="none" stroke="#00f0ff" strokeWidth="1.5" opacity="0.6" className="animate-ping" />
+                    <circle r="8" fill="#00f0ff" stroke="#ffffff" strokeWidth="2" shadow="0 0 10px #00f0ff" />
+                    {/* Directional Heading Cone */}
+                    <path
+                      d="M 0 -14 L 6 0 L -6 0 Z"
+                      fill="#00f0ff"
+                      stroke="#ffffff"
+                      strokeWidth="1"
+                      transform={`rotate(${Math.round(((playerCoords?.rotationY || 0) * 180) / Math.PI + 180)})`}
+                    />
+                    <text x="0" y="-18" textAnchor="middle" fill="#00f0ff" fontSize="10" fontWeight="900" fontFamily="monospace">
+                      YOU
+                    </text>
+                  </g>
+                </svg>
+
+                {/* Compass Rose Indicator Overlay */}
+                <div className="absolute top-4 right-4 flex flex-col items-center bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/15 pointer-events-none text-xs font-mono font-bold text-white">
+                  <span className="text-amber-400 font-black">N</span>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                    <span>W</span>
+                    <span className="text-cyan-400">•</span>
+                    <span>E</span>
+                  </div>
+                  <span className="text-slate-400">S</span>
+                </div>
+              </div>
+
+              {/* Right Side: POI Intel & Tactical Mission Drawer */}
+              <div className="w-full md:w-80 flex flex-col gap-3">
+                {/* Active POI Card */}
+                {selectedPoi ? (
+                  <div className="flex flex-col gap-2 p-4 rounded-2xl bg-black/70 backdrop-blur-md border border-cyan-400/50 shadow-xl">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">{selectedPoi.icon}</span>
+                        <div>
+                          <h3 className="text-base font-black text-white">{selectedPoi.name}</h3>
+                          <span className="text-[10px] font-mono text-cyan-300 uppercase">
+                            BIOME: {selectedPoi.type} • ELEVATION: +{selectedPoi.elevation}m
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setSelectedPoi(null)}
+                        className="text-slate-400 hover:text-white text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-slate-300 leading-relaxed mt-1">
+                      {selectedPoi.description}
+                    </p>
+
+                    <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-300 pt-2 border-t border-white/10">
+                      <div className="flex items-center gap-1.5 text-amber-400">
+                        <span>📦</span>
+                        <span>{selectedPoi.chestsCount} LOOT CHESTS</span>
+                      </div>
+                      <div className="text-cyan-300">
+                        🎯 {Math.round(Math.hypot((playerCoords?.x || 0) - selectedPoi.x, (playerCoords?.z || 0) - selectedPoi.z))}m AWAY
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setWaypoint({ x: selectedPoi.x, z: selectedPoi.z })}
+                      className="mt-2 w-full py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.5)] cursor-pointer"
+                    >
+                      SET WAYPOINT TO {selectedPoi.name.toUpperCase()}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-2xl bg-black/60 backdrop-blur-md border border-white/15 text-xs text-slate-300">
+                    <div className="flex items-center gap-2 font-bold text-cyan-300 mb-1">
+                      <MapPin className="w-4 h-4" />
+                      <span>CLICK MAP TO DROP CUSTOM WAYPOINT</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Click any point on the island or select a named location below to mark a waypoint and distance vector.
+                    </p>
+                  </div>
+                )}
+
+                {/* POI Fast Directory List */}
+                <div className="flex-1 overflow-y-auto max-h-[36vh] flex flex-col gap-1.5 pr-1">
+                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider px-1">
+                    ALL 10 ISLAND LOCATIONS
+                  </span>
+                  {ISLAND_POIS.map((p) => {
+                    const isSelected = selectedPoi?.id === p.id;
+                    const dist = Math.round(Math.hypot((playerCoords?.x || 0) - p.x, (playerCoords?.z || 0) - p.z));
+
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          setSelectedPoi(p);
+                          setWaypoint({ x: p.x, z: p.z });
+                        }}
+                        className={`flex items-center justify-between p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-cyan-500/20 border-cyan-400 text-white shadow-md'
+                            : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="text-sm">{p.icon}</span>
+                          <span className="text-xs font-bold truncate">{p.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] font-mono shrink-0">
+                          <span className="text-amber-400">{p.chestsCount}📦</span>
+                          <span className="text-slate-400">{dist}m</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Bar: Legend & Action Shortcuts */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-white/15 bg-white/5 backdrop-blur-md text-xs font-mono">
+              <div className="flex flex-wrap items-center gap-4 text-slate-300">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full border border-emerald-400 bg-emerald-400/20" />
+                  <span>Safe Eye</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full border border-purple-400 bg-purple-400/20" />
+                  <span>Storm Edge</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-amber-400" />
+                  <span>Waypoint</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-cyan-400" />
+                  <span>Your Position</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {waypoint && (
+                  <button
+                    onClick={() => {
+                      setWaypoint(null);
+                      setSelectedPoi(null);
+                    }}
+                    className="px-3 py-1 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-slate-300 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    CLEAR WAYPOINT
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsMapExpanded(false)}
+                  className="px-4 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 border border-cyan-300 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.6)] cursor-pointer"
+                >
+                  RETURN TO BATTLE [ESC]
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

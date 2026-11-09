@@ -1,19 +1,137 @@
 export interface IslandPOI {
+  id: string;
   name: string;
   x: number;
   z: number;
-  type: 'city' | 'town' | 'lake' | 'industrial' | 'suburb';
+  type: 'city' | 'desert' | 'forest' | 'military' | 'coastal' | 'mountain' | 'industrial' | 'temple' | 'circuit' | 'bunker';
   color: string;
   chestsCount: number;
+  description: string;
+  icon: string;
+  elevation: number;
 }
 
 export const ISLAND_POIS: IslandPOI[] = [
-  { name: 'TILTED TOWERS', x: 0, z: 0, type: 'city', color: '#0ea5e9', chestsCount: 8 },
-  { name: 'PLEASANT PARK', x: -140, z: -140, type: 'town', color: '#22c55e', chestsCount: 6 },
-  { name: 'DUSTY DEPOT', x: 130, z: -40, type: 'industrial', color: '#f97316', chestsCount: 5 },
-  { name: 'SALTY SPRINGS', x: 40, z: 120, type: 'suburb', color: '#eab308', chestsCount: 5 },
-  { name: 'LOOT LAKE', x: -60, z: -70, type: 'lake', color: '#38bdf8', chestsCount: 6 },
-  { name: 'RETAIL ROW', x: 150, z: 120, type: 'town', color: '#a855f7', chestsCount: 6 },
+  {
+    id: 'strike_city',
+    name: 'Strike City',
+    x: 60,
+    z: -40,
+    type: 'city',
+    color: '#0ea5e9',
+    chestsCount: 12,
+    description: 'Towering skyscrapers, commercial shops, glass corporate lobby & underground subway tunnels.',
+    icon: '🏙️',
+    elevation: 0.1,
+  },
+  {
+    id: 'dusty_desert',
+    name: 'Dusty Desert',
+    x: 220,
+    z: 220,
+    type: 'desert',
+    color: '#f59e0b',
+    chestsCount: 9,
+    description: 'Arid sandstone canyon, oil pump jack rigs, abandoned frontier saloon & hidden loot cave.',
+    icon: '🏜️',
+    elevation: 2.0,
+  },
+  {
+    id: 'pinewood_forest',
+    name: 'Pinewood Forest',
+    x: -240,
+    z: -200,
+    type: 'forest',
+    color: '#22c55e',
+    chestsCount: 10,
+    description: 'Dense pine tree canopy, logging camp, 2-story ranger fire lookout tower & hidden clearing.',
+    icon: '🌲',
+    elevation: 6.5,
+  },
+  {
+    id: 'military_base',
+    name: 'Military Base',
+    x: 250,
+    z: -230,
+    type: 'military',
+    color: '#ef4444',
+    chestsCount: 14,
+    description: 'Watchtowers, aircraft hangars, satellite radar dome & heavily reinforced armory bunker.',
+    icon: '🪖',
+    elevation: 5.0,
+  },
+  {
+    id: 'coastal_village',
+    name: 'Coastal Village',
+    x: -280,
+    z: 80,
+    type: 'coastal',
+    color: '#06b6d4',
+    chestsCount: 10,
+    description: 'Oceanfront cottages, boat docks, sandy beaches, fishing shacks & 24m spiral lighthouse.',
+    icon: '🏖️',
+    elevation: 0.2,
+  },
+  {
+    id: 'snowfall_mountain',
+    name: 'Snowfall Mountain',
+    x: 0,
+    z: -320,
+    type: 'mountain',
+    color: '#e2e8f0',
+    chestsCount: 11,
+    description: 'Glacial alpine summit (+38m), frozen tarn, weather observatory & alpine ski chalets.',
+    icon: '🏔️',
+    elevation: 36.0,
+  },
+  {
+    id: 'industrial_zone',
+    name: 'Industrial Zone',
+    x: -80,
+    z: 280,
+    type: 'industrial',
+    color: '#f97316',
+    chestsCount: 12,
+    description: 'Manufacturing factories, multi-tier container shipping yard, overhead gantry cranes & silos.',
+    icon: '🏭',
+    elevation: 1.5,
+  },
+  {
+    id: 'lost_temple',
+    name: 'Lost Temple',
+    x: 80,
+    z: 320,
+    type: 'temple',
+    color: '#a855f7',
+    chestsCount: 9,
+    description: 'Ancient mossy step pyramid, sacrificial fire braziers & subterranean treasure catacombs.',
+    icon: '🏛️',
+    elevation: 8.0,
+  },
+  {
+    id: 'racing_circuit',
+    name: 'Racing Circuit',
+    x: -160,
+    z: -30,
+    type: 'circuit',
+    color: '#ec4899',
+    chestsCount: 8,
+    description: 'Asphalt GP racetrack, banked turns, pit garages, jump ramps & high-speed sports cruisers.',
+    icon: '🏎️',
+    elevation: 0.1,
+  },
+  {
+    id: 'underground_bunker',
+    name: 'Underground Bunker',
+    x: -20,
+    z: 90,
+    type: 'bunker',
+    color: '#10b981',
+    chestsCount: 10,
+    description: 'Subterranean military research facility with blast doors, server rooms, armory & escape shaft.',
+    icon: '🛡️',
+    elevation: -4.5,
+  },
 ];
 
 export const BOT_NAMES = [

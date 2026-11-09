@@ -367,9 +367,19 @@ export interface PlayerProfile {
   settings: GameSettings;
 }
 
-export type GameMode = 'battle_royale' | 'first_person_royale' | 'zero_build' | '1v1_build_fight';
+export type GameMode =
+  | 'battle_royale'
+  | '1v1'
+  | '2v2'
+  | 'free_for_all'
+  | 'private_match'
+  | 'practice'
+  | 'first_person_royale'
+  | 'zero_build'
+  | '1v1_build_fight';
 
 export type BattlegroundMap =
+  | 'strike_island'
   | 'pinecrest_suburb'
   | 'apex_metropolis'
   | 'harvest_ridge'

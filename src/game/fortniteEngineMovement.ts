@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { getTerrainHeight, getGroundSurface, isPointInLake, SKYSCRAPER_LAUNCH_PADS } from './fortniteWorld';
 import { calculateRampHeightAt } from './fortniteBuilding';
 import { fortniteAudio } from '../utils/audio';
+import { ISLAND_POIS } from '../data/mapData';
 import type { FortniteEngine } from './fortniteEngine';
 
 
@@ -480,8 +481,40 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
     }
   }
 
-  engine.playerPos.x = Math.max(-270, Math.min(270, engine.playerPos.x));
-  engine.playerPos.z = Math.max(-270, Math.min(270, engine.playerPos.z));
+  const maxBoundary = engine.mapManager?.currentMapIndex === 0 ? 410 : 270;
+  engine.playerPos.x = Math.max(-maxBoundary, Math.min(maxBoundary, engine.playerPos.x));
+  engine.playerPos.z = Math.max(-maxBoundary, Math.min(maxBoundary, engine.playerPos.z));
+
+  // Dynamic POI location detection for HUD
+  if (engine.callbacks.onLocationChange) {
+    let closestPoi = engine.mapManager?.currentMapData?.metadata.name || 'Strike Island';
+    let minDist = 140;
+    for (let i = 0; i < ISLAND_POIS.length; i++) {
+      const poi = ISLAND_POIS[i];
+      const d = Math.hypot(engine.playerPos.x - poi.x, engine.playerPos.z - poi.z);
+      if (d < minDist) {
+        minDist = d;
+        closestPoi = poi.name;
+      }
+    }
+    if (closestPoi !== (engine as any).lastLocationName) {
+      (engine as any).lastLocationName = closestPoi;
+      engine.callbacks.onLocationChange(closestPoi);
+    }
+  }
+
+  // Real-time Player Coordinates & Heading for Tactical Map Radar
+  if (engine.callbacks.onPlayerPositionUpdate) {
+    (engine as any).radarPosTimer = ((engine as any).radarPosTimer || 0) + dt;
+    if ((engine as any).radarPosTimer >= 0.08) {
+      (engine as any).radarPosTimer = 0;
+      engine.callbacks.onPlayerPositionUpdate({
+        x: Math.round(engine.playerPos.x * 10) / 10,
+        z: Math.round(engine.playerPos.z * 10) / 10,
+        rotationY: engine.playerRotY,
+      });
+    }
+  }
 
   // Skyscraper Ground Ascenders & Rooftop Super Bounce Pads
   for (let i = 0; i < SKYSCRAPER_LAUNCH_PADS.length; i++) {
@@ -682,11 +715,26 @@ export function updateStormImpl(engine: FortniteEngine, dt: number) {
       engine.storm.targetRadius,
       dt * 0.07
     );
+    engine.storm.currentCenterX = THREE.MathUtils.lerp(
+      engine.storm.currentCenterX,
+      engine.storm.targetCenterX,
+      dt * 0.05
+    );
+    engine.storm.currentCenterZ = THREE.MathUtils.lerp(
+      engine.storm.currentCenterZ,
+      engine.storm.targetCenterZ,
+      dt * 0.05
+    );
     if (engine.stormCylinderMesh) {
+      engine.stormCylinderMesh.position.set(
+        engine.storm.currentCenterX,
+        100,
+        engine.storm.currentCenterZ
+      );
       engine.stormCylinderMesh.scale.set(
-        engine.storm.currentRadius / 290,
+        engine.storm.currentRadius,
         1,
-        engine.storm.currentRadius / 290
+        engine.storm.currentRadius
       );
     }
   }

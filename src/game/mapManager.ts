@@ -4,9 +4,10 @@ import { UpgradeBenchStation, createUpgradeBenchMesh } from './fortniteWorldAren
 import { addDetailedDrivableVehicle } from './fortniteWorldVehiclesProps';
 import { addChest, addHarvestable } from './fortniteWorldNature';
 import { SKYSCRAPER_LAUNCH_PADS } from './fortniteWorldTerrain';
+import { buildStrikeIslandWorld, getStrikeIslandElevation } from './fortniteWorldStrikeIsland';
 
 export interface MapMetadata {
-  id: 0 | 1 | 2;
+  id: 0 | 1 | 2 | 3;
   key: BattlegroundMap;
   name: string;
   theme: string;
@@ -23,6 +24,20 @@ export interface MapMetadata {
 export const MAP_METADATA_LIST: MapMetadata[] = [
   {
     id: 0,
+    key: 'strike_island',
+    name: 'Strike Island',
+    theme: 'Mega Battle Royale',
+    tag: '10-POI MEGA MAP',
+    description: 'Massive 840m island featuring Strike City, Dusty Desert, Pinewood Forest, Military Base, Coastal Village, Snowfall Mountain, Industrial Zone, Lost Temple, Racing Circuit & Underground Bunker.',
+    skyColor: 0x38bdf8,
+    fogColor: 0xbae6fd,
+    fogDensity: 0.0016, // lowered density so distant mountain peaks and highrises are visible across the 840m island
+    ambientColor: 0xffffff,
+    sunColor: 0xffedd5,
+    sunIntensity: 2.5,
+  },
+  {
+    id: 1,
     key: 'pinecrest_suburb',
     name: 'Pinecrest Suburb',
     theme: 'Town',
@@ -36,7 +51,7 @@ export const MAP_METADATA_LIST: MapMetadata[] = [
     sunIntensity: 2.4,
   },
   {
-    id: 1,
+    id: 2,
     key: 'apex_metropolis',
     name: 'Apex Metropolis',
     theme: 'City',
@@ -50,7 +65,7 @@ export const MAP_METADATA_LIST: MapMetadata[] = [
     sunIntensity: 2.2,
   },
   {
-    id: 2,
+    id: 3,
     key: 'harvest_ridge',
     name: 'Harvest Ridge',
     theme: 'Country',
@@ -84,15 +99,18 @@ export interface MapDataResult {
  * Procedural Heightfield & Multi-Tier Elevation Engine Function
  * Defines leveled plateaus, stepped hills, sunken culverts, terraced cliffs, and graded slopes.
  */
-export function getTerrainHeight(x: number, z: number, mapTheme: string = 'pinecrest_suburb'): number {
+export function getTerrainHeight(x: number, z: number, mapTheme: string = 'strike_island'): number {
   const mapIdx = MapManager.resolveMapIndex(mapTheme);
-  if (mapIdx === 1) {
+  if (mapIdx === 0) {
+    // Strike Island (840m Mega Battle Royale Island with 10 POIs)
+    return getStrikeIslandElevation(x, z);
+  } else if (mapIdx === 2) {
     // Apex Metropolis (City Theme)
     if (x > 18 && x < 38 && z > 8 && z < 28) return -3.8;
     if (z < -65) return 4.5;
     if (x < -80 && z > 50) return 3.2;
     return 0.0;
-  } else if (mapIdx === 2) {
+  } else if (mapIdx === 3) {
     // Harvest Ridge (Country Theme)
     const creekCenterZ = 40 + Math.sin(x * 0.02) * 8;
     const creekDist = Math.abs(z - creekCenterZ);
@@ -135,7 +153,7 @@ export function getTerrainHeight(x: number, z: number, mapTheme: string = 'pinec
 
 export class MapManager {
   private scene: THREE.Scene;
-  public currentMapIndex: 0 | 1 | 2 = 0;
+  public currentMapIndex: 0 | 1 | 2 | 3 = 0;
   public currentMapData: MapDataResult | null = null;
 
   constructor(scene: THREE.Scene) {
@@ -143,17 +161,20 @@ export class MapManager {
   }
 
   /**
-   * Helper to map any string/alias map key to strict 0 | 1 | 2
+   * Helper to map any string/alias map key to strict 0 | 1 | 2 | 3
    */
-  public static resolveMapIndex(selectedMap?: string): 0 | 1 | 2 {
-    if (!selectedMap) return 0;
-    if (selectedMap === 'apex_metropolis' || selectedMap === 'financial_district' || selectedMap === 'tilted_skyscrapers') {
+  public static resolveMapIndex(selectedMap?: string): 0 | 1 | 2 | 3 {
+    if (!selectedMap || selectedMap === 'strike_island') return 0;
+    if (selectedMap === 'pinecrest_suburb' || selectedMap === 'suburban_valley' || selectedMap === 'pleasant_valley' || selectedMap === 'island_2v2') {
       return 1;
     }
-    if (selectedMap === 'harvest_ridge' || selectedMap === 'neocity_heights') {
+    if (selectedMap === 'apex_metropolis' || selectedMap === 'financial_district' || selectedMap === 'tilted_skyscrapers') {
       return 2;
     }
-    return 0; // pinecrest_suburb, suburban_valley, pleasant_valley, island_2v2
+    if (selectedMap === 'harvest_ridge' || selectedMap === 'neocity_heights') {
+      return 3;
+    }
+    return 0; // default to Strike Island
   }
 
   /**
@@ -207,17 +228,19 @@ export class MapManager {
   }
 
   /**
-   * Load one of 3 distinct, realistic environments
-   * @param mapIndex 0 = Pinecrest Suburb (Town), 1 = Apex Metropolis (City), 2 = Harvest Ridge (Country)
+   * Load one of 4 distinct, realistic environments
+   * @param mapIndex 0 = Strike Island (10-POI Mega Map), 1 = Pinecrest Suburb (Town), 2 = Apex Metropolis (City), 3 = Harvest Ridge (Country)
    */
-  public loadMap(mapIndex: 0 | 1 | 2): MapDataResult {
+  public loadMap(mapIndex: 0 | 1 | 2 | 3): MapDataResult {
     this.disposeCurrentMap();
     this.currentMapIndex = mapIndex;
 
     let result: MapDataResult;
     if (mapIndex === 0) {
-      result = this.generatePinecrestSuburb();
+      result = this.generateStrikeIsland();
     } else if (mapIndex === 1) {
+      result = this.generatePinecrestSuburb();
+    } else if (mapIndex === 2) {
       result = this.generateApexMetropolis();
     } else {
       result = this.generateHarvestRidge();
@@ -239,12 +262,24 @@ export class MapManager {
   }
 
   // =========================================================================
+  // MAP 0: "Strike Island" (10-POI Mega Battle Royale Island, 840m x 840m)
+  // =========================================================================
+  private generateStrikeIsland(): MapDataResult {
+    const meta = MAP_METADATA_LIST[0];
+    const islandData = buildStrikeIslandWorld();
+    return {
+      metadata: meta,
+      ...islandData,
+    };
+  }
+
+  // =========================================================================
   // MAP 1: "Pinecrest Suburb" (Town Theme)
   // Contoured 360x360 Plane (96x96), residential loop, cul-de-sacs,
   // 3 Enterable 2-Story Suburban Homes with Balconies & Central Fountain Plaza
   // =========================================================================
   private generatePinecrestSuburb(): MapDataResult {
-    const meta = MAP_METADATA_LIST[0];
+    const meta = MAP_METADATA_LIST[1];
     const rootGroup = new THREE.Group();
     rootGroup.name = 'Map_PinecrestSuburb';
 
@@ -793,7 +828,7 @@ export class MapManager {
   // Towering Skyline, Enterable Corporate Tower (Ground + 2 Floors), Mezzanine Skybridge & Rooftop Helipad
   // =========================================================================
   private generateApexMetropolis(): MapDataResult {
-    const meta = MAP_METADATA_LIST[1];
+    const meta = MAP_METADATA_LIST[2];
     const rootGroup = new THREE.Group();
     rootGroup.name = 'Map_ApexMetropolis';
 
@@ -1154,7 +1189,7 @@ export class MapManager {
   // 2-Story Dutch Barn with Hayloft, Country Farmhouse with Dormers, Grain Silo & Windmill
   // =========================================================================
   private generateHarvestRidge(): MapDataResult {
-    const meta = MAP_METADATA_LIST[2];
+    const meta = MAP_METADATA_LIST[3];
     const rootGroup = new THREE.Group();
     rootGroup.name = 'Map_HarvestRidge';
 

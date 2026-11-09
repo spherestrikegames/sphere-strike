@@ -286,6 +286,27 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     fortniteAudio.playUiClick();
   };
 
+  const handleFindRandomPlayers = async () => {
+    try {
+      const rooms = await multiplayerClient.fetchPublicRooms();
+      const candidates = rooms.filter((r) => r.code !== party.code && r.playerCount > 0);
+      if (candidates.length > 0) {
+        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        setParty((prev) => ({ ...prev, code: target.code }));
+        multiplayerClient.connectWithCode(target.code, {
+          name: profile.name,
+          skinId: profile.selectedSkin,
+          level: profile.level,
+        });
+      } else {
+        handleJoinGlobalRoom();
+      }
+    } catch {
+      handleJoinGlobalRoom();
+    }
+    fortniteAudio.playUiClick();
+  };
+
   const handleRetryConnection = () => {
     multiplayerClient.connect();
     fortniteAudio.playUiClick();
@@ -324,11 +345,43 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
       tag: isBattleRoyaleLocked ? '🔒 SERVER/SQUAD REQUIRED' : isGlobalServer ? '🌐 GLOBAL SERVER READY' : '👥 SQUAD READY',
       desc: isBattleRoyaleLocked
         ? 'Locked: Pure multiplayer PvP! Connect to the Global Server or invite a friend to unlock drop.'
-        : 'Real players only — zero AI bots! Drop into the island with friends or global server players for pure Battle Royale PvP.',
+        : 'Real players only — zero AI bots! Drop into Strike Island with friends or global server players for pure Battle Royale PvP.',
       icon: isBattleRoyaleLocked ? '🔒' : '🌐',
       bg: isBattleRoyaleLocked ? 'from-rose-900/80 to-slate-900/90' : 'from-amber-600/90 to-rose-900/90',
       onlineOnly: true,
       isLocked: isBattleRoyaleLocked,
+    },
+    {
+      id: '1v1',
+      name: '1V1 AIM DUEL',
+      tag: 'FAST 1V1 • NO-BUILD',
+      desc: 'Intense 1-on-1 aim duel! Instant respawns, 600 HP (300 HP + 300 Shield), and selectable bot difficulty or friend duel.',
+      icon: '⚔️',
+      bg: 'from-indigo-600/70 to-slate-900/90',
+    },
+    {
+      id: '2v2',
+      name: '2V2 SQUAD CLASH',
+      tag: '2V2 TEAM DUEL',
+      desc: 'Team up with a partner or bot and face off against a rival duo in tactical sector combat.',
+      icon: '👥',
+      bg: 'from-cyan-600/70 to-slate-900/90',
+    },
+    {
+      id: 'free_for_all',
+      name: 'FREE FOR ALL',
+      tag: 'ALL-OUT MULTIPLAYER FFA',
+      desc: 'No teams, no mercy! High-intensity chaotic free-for-all across the battleground.',
+      icon: '💥',
+      bg: 'from-rose-600/70 to-slate-900/90',
+    },
+    {
+      id: 'practice',
+      name: 'PRACTICE SANDBOX',
+      tag: 'INFINITE MATERIALS',
+      desc: 'Practice movement, building 90s, edits, weapon recoil, and target aiming with zero storm pressure.',
+      icon: '🛠️',
+      bg: 'from-emerald-600/70 to-slate-900/90',
     },
     {
       id: 'first_person_royale',
@@ -337,14 +390,6 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
       desc: 'First-person realistic sights, weapon recoil, 25-bot drop & tactical urban combat.',
       icon: '🎯',
       bg: 'from-blue-600/70 to-slate-900/90',
-    },
-    {
-      id: '1v1_build_fight',
-      name: '1V1 DUEL ARENA',
-      tag: 'NO-BUILD • 600 HP',
-      desc: 'Ruthless aim duel! Pure mechanical gunplay, 600 HP (300 HP + 300 Shield), and selectable AI bot hardness.',
-      icon: '⚔️',
-      bg: 'from-indigo-600/70 to-slate-900/90',
     },
   ];
 
@@ -356,6 +401,14 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     icon: string;
     bg: string;
   }[] = [
+    {
+      id: 'strike_island',
+      name: 'Strike Island (Mega)',
+      tag: '⭐ 10 POIs • 840M ISLAND',
+      desc: 'Massive 840m island featuring Strike City, Dusty Desert, Pinewood Forest, Military Base, Coastal Village, Snowfall Mountain, Industrial Zone, Lost Temple, Racing Circuit & Underground Bunker.',
+      icon: '🏝️',
+      bg: 'from-cyan-600/60 via-blue-600/40 to-slate-900/95',
+    },
     {
       id: 'pinecrest_suburb',
       name: 'Pinecrest Suburb',
@@ -904,29 +957,62 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
               </p>
             </div>
 
-            {/* Quick Match & Global Server Buttons */}
+            {/* 6 Core Matchmaking Buttons */}
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={handleJoinGlobalRoom}
-                className={`py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                className={`py-2 px-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
                   party.code === 'ROYALE-GLOBAL'
                     ? 'bg-amber-500 text-slate-950 border-amber-300 ring-2 ring-amber-400 shadow-lg'
                     : 'bg-slate-800/90 hover:bg-slate-700 text-amber-300 border-amber-500/30'
                 }`}
-                title="Join the public global server where all online players meet"
+                title="Play Online: Join the public global server with players worldwide"
               >
                 <Globe className="w-3.5 h-3.5 text-amber-400" />
-                <span>GLOBAL SERVER</span>
+                <span>PLAY ONLINE</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleQuickMatch}
-                className="py-2 px-2.5 rounded-xl bg-gradient-to-r from-purple-700/80 to-indigo-700/80 hover:from-purple-600 hover:to-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-purple-400/30 shadow-md transition-all cursor-pointer"
+                className="py-2 px-2 rounded-xl bg-gradient-to-r from-purple-700/80 to-indigo-700/80 hover:from-purple-600 hover:to-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-purple-400/30 shadow-md transition-all cursor-pointer"
+                title="Quick Match: Automatically match with active players"
               >
                 <Zap className="w-3.5 h-3.5 text-yellow-300" />
                 <span>QUICK MATCH</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="py-2 px-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                title="Play with Friends: Copy direct room invite link"
+              >
+                <Link2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{copiedLink ? 'LINK COPIED!' : 'PLAY W/ FRIENDS'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleFindRandomPlayers}
+                className="py-2 px-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                title="Find Random Players: Scan and connect to public rooms"
+              >
+                <Users className="w-3.5 h-3.5 text-cyan-400" />
+                <span>FIND RANDOM</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleGenerateNewCode}
+                className="flex-1 py-1.5 px-2.5 rounded-xl bg-slate-800/70 hover:bg-slate-700 text-[11px] font-bold text-slate-300 border border-white/10 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                title="Create Private Room: Generate new room code"
+              >
+                <RotateCw className="w-3 h-3 text-cyan-400" />
+                <span>CREATE PRIVATE ROOM</span>
               </button>
             </div>
 

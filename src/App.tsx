@@ -79,7 +79,9 @@ export default function App() {
   // App & Screen State
   const [gameState, setGameState] = useState<'lobby' | 'playing' | 'victory' | 'eliminated'>('lobby');
   const [selectedMode, setSelectedMode] = useState<GameMode>('battle_royale');
-  const [selectedMap, setSelectedMap] = useState<BattlegroundMap>('pinecrest_suburb');
+  const [selectedMap, setSelectedMap] = useState<BattlegroundMap>('strike_island');
+  const [playerLocationName, setPlayerLocationName] = useState<string>('Strike Island');
+  const [playerCoords, setPlayerCoords] = useState<{ x: number; z: number; rotationY: number }>({ x: 0, z: 0, rotationY: 0 });
   const [botDifficulty, setBotDifficulty] = useState<'casual' | 'normal' | 'pro' | 'god'>('pro');
   const [isLockerOpen, setIsLockerOpen] = useState<boolean>(false);
   const [isShopOpen, setIsShopOpen] = useState<boolean>(false);
@@ -366,6 +368,12 @@ export default function App() {
         onNearSupplyPrompt: (prompt) => {
           setNearSupplyPrompt(prompt);
         },
+        onLocationChange: (locName) => {
+          setPlayerLocationName(locName);
+        },
+        onPlayerPositionUpdate: (coords) => {
+          setPlayerCoords(coords);
+        },
         onArena1v1Update: (arenaState) => {
           setArena1v1State({ ...arenaState });
         },
@@ -590,6 +598,8 @@ export default function App() {
           arena1v1State={arena1v1State}
           duelState={duelState}
           botDifficulty={botDifficulty}
+          playerLocationName={playerLocationName}
+          playerCoords={playerCoords}
           onChangeBotDifficulty={handleSetBotDifficulty}
           onReset1v1Builds={() => engineRef.current?.resetAllBuildings()}
           onOpenShop={() => {
