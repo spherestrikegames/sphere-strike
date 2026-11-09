@@ -485,22 +485,23 @@ export class FortniteEngine {
       ];
       this.activeSlot = 1;
     } else {
-      if (this.selectedMap === 'financial_district' || this.selectedMap === 'tilted_skyscrapers') {
-        // Drop straight into Financial District Skyscraper Canyon
+      const mapIdx = MapManager.resolveMapIndex(this.selectedMap);
+      if (mapIdx === 1) {
+        // Drop straight into Apex Metropolis Avenue Grid
         this.playerPos.set((Math.random() - 0.5) * 30, 220, (Math.random() - 0.5) * 30);
         this.storm.currentCenterX = 0;
         this.storm.currentCenterZ = 0;
         this.storm.targetCenterX = 0;
         this.storm.targetCenterZ = 0;
-      } else if (this.selectedMap === 'neocity_heights') {
-        // Drop into Neo-City Heights bi-level metro canyon
-        this.playerPos.set((Math.random() - 0.5) * 30, 220, 20 + (Math.random() - 0.5) * 30);
+      } else if (mapIdx === 2) {
+        // Drop into Harvest Ridge Countryside
+        this.playerPos.set((Math.random() - 0.5) * 30, 220, -10 + (Math.random() - 0.5) * 30);
         this.storm.currentCenterX = 0;
-        this.storm.currentCenterZ = 20;
+        this.storm.currentCenterZ = -10;
         this.storm.targetCenterX = 0;
-        this.storm.targetCenterZ = 20;
+        this.storm.targetCenterZ = -10;
       } else {
-        // Drop into Suburban Valley cul-de-sacs
+        // Drop into Pinecrest Suburb Residential Loop
         this.playerPos.set((Math.random() - 0.5) * 30, 220, 10 + (Math.random() - 0.5) * 30);
         this.storm.currentCenterX = 0;
         this.storm.currentCenterZ = 10;
@@ -584,15 +585,7 @@ export class FortniteEngine {
       this.spawnArenaGroundLoot();
       fortniteAudio.startGameMusic();
     } else {
-      let mapIndex: 0 | 1 | 2 = 0;
-      if (this.selectedMap === 'financial_district' || this.selectedMap === 'tilted_skyscrapers') {
-        mapIndex = 1;
-      } else if (this.selectedMap === 'neocity_heights') {
-        mapIndex = 2;
-      } else {
-        mapIndex = 0;
-      }
-
+      const mapIndex = MapManager.resolveMapIndex(this.selectedMap);
       const mapData = this.mapManager.loadMap(mapIndex);
       this.harvestables = mapData.harvestables;
       this.harvestableMeshes = mapData.harvestableMeshes;
@@ -763,6 +756,22 @@ export class FortniteEngine {
   }
   public getCurrentWeapon(): FortniteWeapon | null {
     return getCurrentWeaponImpl(this);
+  }
+  public switchMap(map: BattlegroundMap) {
+    this.selectedMap = map;
+    if (this.mode !== '1v1_build_fight') {
+      const mapIndex = MapManager.resolveMapIndex(map);
+      const mapData = this.mapManager.loadMap(mapIndex);
+      this.harvestables = mapData.harvestables;
+      this.harvestableMeshes = mapData.harvestableMeshes;
+      this.chests = mapData.chests;
+      this.chestMeshes = mapData.chestMeshes;
+      this.staticColliders = mapData.staticColliders;
+      this.spatialGrid.clear();
+      this.spatialGrid.addAll(mapData.staticColliders);
+      this.vehicles = mapData.vehicles;
+      this.upgradeBenches = mapData.upgradeBenches;
+    }
   }
   // --- REALISTIC WEAPON FIRING & BALLISTICS ---
 

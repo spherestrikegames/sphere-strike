@@ -79,7 +79,7 @@ export default function App() {
   // App & Screen State
   const [gameState, setGameState] = useState<'lobby' | 'playing' | 'victory' | 'eliminated'>('lobby');
   const [selectedMode, setSelectedMode] = useState<GameMode>('battle_royale');
-  const [selectedMap, setSelectedMap] = useState<BattlegroundMap>('suburban_valley');
+  const [selectedMap, setSelectedMap] = useState<BattlegroundMap>('pinecrest_suburb');
   const [botDifficulty, setBotDifficulty] = useState<'casual' | 'normal' | 'pro' | 'god'>('pro');
   const [isLockerOpen, setIsLockerOpen] = useState<boolean>(false);
   const [isShopOpen, setIsShopOpen] = useState<boolean>(false);

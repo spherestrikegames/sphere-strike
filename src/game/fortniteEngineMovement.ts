@@ -109,11 +109,18 @@ export function checkAndResolveSolidCollisionsImpl(engine: FortniteEngine, newX:
         if (currentY + 1.8 < colMinY - 0.1) continue;
         if (currentY >= colMaxY - 0.2) continue;
 
-        // If this is a step/stair and player is high enough to step onto it (<= 0.65m step rise), allow step-up
+        // If this is a step/stair/ramp and player is high enough to step onto it (<= 0.85m step rise), allow step-up
         const isStairStep =
-          (col.name && (col.name.toLowerCase().includes('step') || col.name.toLowerCase().includes('stair'))) ||
-          (colMaxY - currentY <= 0.65 && colMaxY - colMinY <= 0.65);
-        if (isStairStep && currentY >= colMaxY - 0.65) continue;
+          (col.name && (
+            col.name.toLowerCase().includes('step') ||
+            col.name.toLowerCase().includes('stair') ||
+            col.name.toLowerCase().includes('ramp') ||
+            col.name.toLowerCase().includes('ladder') ||
+            col.name.toLowerCase().includes('curb') ||
+            col.name.toLowerCase().includes('incline')
+          )) ||
+          (colMaxY - currentY <= 0.85 && colMaxY - colMinY <= 0.85);
+        if (isStairStep && currentY >= colMaxY - 0.85) continue;
 
         const closestX = Math.max(col.minX, Math.min(resX, col.maxX));
         const closestZ = Math.max(col.minZ, Math.min(resZ, col.maxZ));

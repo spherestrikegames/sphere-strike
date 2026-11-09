@@ -370,6 +370,9 @@ export interface PlayerProfile {
 export type GameMode = 'battle_royale' | 'first_person_royale' | 'zero_build' | '1v1_build_fight';
 
 export type BattlegroundMap =
+  | 'pinecrest_suburb'
+  | 'apex_metropolis'
+  | 'harvest_ridge'
   | 'suburban_valley'
   | 'financial_district'
   | 'neocity_heights'

@@ -46,7 +46,7 @@ interface FortniteLobbyProps {
 export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   profile,
   selectedMode,
-  selectedMap = 'suburban_valley',
+  selectedMap = 'pinecrest_suburb',
   botDifficulty = 'pro',
   onSelectMode,
   onSelectMap,
@@ -357,28 +357,28 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     bg: string;
   }[] = [
     {
-      id: 'suburban_valley',
-      name: 'Suburban Valley',
-      tag: 'ENTERABLE 2-STORY',
-      desc: 'Organic roads, cul-de-sacs, enterable 2-story houses with walkout sniper balconies & interior rooms.',
+      id: 'pinecrest_suburb',
+      name: 'Pinecrest Suburb',
+      tag: 'TOWN THEME',
+      desc: 'Residential loop, sidewalk curbs, 3 enterable 2-story homes with walkout sniper balconies & town plaza fountain.',
       icon: '🏡',
       bg: 'from-amber-600/50 to-slate-900/90',
     },
     {
-      id: 'financial_district',
-      name: 'Financial District',
-      tag: 'SKYSCRAPER ARENA',
-      desc: 'Urban high-rises, zebra crosswalks, enterable corporate lobbies, stairs & rooftop observation decks.',
+      id: 'apex_metropolis',
+      name: 'Apex Metropolis',
+      tag: 'CITY THEME',
+      desc: 'Concrete avenue grid, towering skyline, enterable corporate tower with mezzanine skybridge & rooftop helipad.',
       icon: '🏙️',
       bg: 'from-indigo-600/50 to-slate-900/90',
     },
     {
-      id: 'neocity_heights',
-      name: 'Neo-City Heights',
-      tag: 'BI-LEVEL METROPARK',
-      desc: 'Sunken highway underpass, elevated skywalk bridges, 2-story commercial pavilions with mezzanine walkways.',
-      icon: '🌆',
-      bg: 'from-cyan-600/50 to-slate-900/90',
+      id: 'harvest_ridge',
+      name: 'Harvest Ridge',
+      tag: 'COUNTRY THEME',
+      desc: 'Rolling grassy hills, dried creek ravine, 2-story timber Dutch Barn with hayloft, country farmhouse & grain silo.',
+      icon: '🌾',
+      bg: 'from-emerald-600/50 to-slate-900/90',
     },
   ];
 
@@ -654,14 +654,23 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                 <span className="text-[11px] font-black tracking-wider text-emerald-300 uppercase flex items-center gap-1.5">
                   <span>📍</span> BATTLEGROUND MAP
                 </span>
-                <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                  {battlegroundMaps.find((m) => m.id === selectedMap || (m.id === 'suburban_valley' && (selectedMap === 'pleasant_valley' || selectedMap === 'island_2v2')) || (m.id === 'financial_district' && selectedMap === 'tilted_skyscrapers'))?.tag || 'ENTERABLE 2-STORY'}
+                <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                  {battlegroundMaps.find((m) =>
+                    m.id === selectedMap ||
+                    (m.id === 'pinecrest_suburb' && (selectedMap === 'suburban_valley' || selectedMap === 'pleasant_valley' || selectedMap === 'island_2v2')) ||
+                    (m.id === 'apex_metropolis' && (selectedMap === 'financial_district' || selectedMap === 'tilted_skyscrapers')) ||
+                    (m.id === 'harvest_ridge' && selectedMap === 'neocity_heights')
+                  )?.tag || 'TOWN THEME'}
                 </span>
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-2">
                 {battlegroundMaps.map((map) => {
-                  const isCurMap = selectedMap === map.id || (map.id === 'suburban_valley' && (selectedMap === 'pleasant_valley' || selectedMap === 'island_2v2' || !selectedMap)) || (map.id === 'financial_district' && selectedMap === 'tilted_skyscrapers');
+                  const isCurMap =
+                    selectedMap === map.id ||
+                    (map.id === 'pinecrest_suburb' && (selectedMap === 'suburban_valley' || selectedMap === 'pleasant_valley' || selectedMap === 'island_2v2' || !selectedMap)) ||
+                    (map.id === 'apex_metropolis' && (selectedMap === 'financial_district' || selectedMap === 'tilted_skyscrapers')) ||
+                    (map.id === 'harvest_ridge' && selectedMap === 'neocity_heights');
                   return (
                     <button
                       key={map.id}
@@ -670,10 +679,10 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
                         onSelectMap?.(map.id);
                         fortniteAudio.playUiClick();
                       }}
-                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
+                      className={`p-3 rounded-2xl apple-liquid-glass text-left flex items-center justify-between gap-3 transition-all cursor-pointer ${
                         isCurMap
                           ? `bg-gradient-to-r ${map.bg} border-emerald-400 ring-2 ring-emerald-400/80 shadow-lg scale-[1.02]`
-                          : 'bg-black/50 border-white/10 hover:bg-white/5 opacity-80 hover:opacity-100'
+                          : 'hover:border-white/30 hover:scale-[1.01] opacity-85 hover:opacity-100'
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
