@@ -6,6 +6,19 @@ import { fortniteAudio } from '../utils/audio';
 import { ISLAND_POIS } from '../data/mapData';
 import type { FortniteEngine } from './fortniteEngine';
 
+// Reusable module-scoped scratch objects to prevent per-frame GC allocations
+const _scratchForward = new THREE.Vector3();
+const _scratchRight = new THREE.Vector3();
+const _scratchMoveDir = new THREE.Vector3();
+const _scratchAnchorPos = new THREE.Vector3();
+const _scratchTargetCamPos = new THREE.Vector3();
+const _scratchCamOffset = new THREE.Vector3();
+const _scratchRayDir = new THREE.Vector3();
+const _scratchProbeBox = new THREE.Box3();
+const _scratchProbeHit = new THREE.Vector3();
+const _scratchCamRay = new THREE.Ray();
+const _scratchEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+
 
 export function getGroundElevationAtImpl(engine: FortniteEngine, x: number, z: number, currentY: number): number {
   let highestY = 0.0;
@@ -424,7 +437,16 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
     const stepInterval = engine.isSpeedBoosting ? 0.18 : engine.isSprinting ? 0.28 : engine.isCrouching ? 0.52 : 0.36;
     if (engine.footstepTimer >= stepInterval) {
       engine.footstepTimer = 0;
-      if (isPointInLake(engine.playerPos.x, engine.playerPos.z)) {
+      const mapData = engine.mapManager?.currentMapData;
+      if (mapData) {
+        const waterInfo = mapData.getWaterInfo(engine.playerPos.x, engine.playerPos.z);
+        if (waterInfo.isInWater && engine.playerPos.y <= waterInfo.waterLevel + 0.5) {
+          fortniteAudio.playWaterSplash();
+        } else {
+          const surface = mapData.getSurfaceType(engine.playerPos.x, engine.playerPos.z);
+          fortniteAudio.playFootstep(surface === 'sand' || surface === 'snow' ? 'grass' : surface === 'water' ? 'grass' : surface);
+        }
+      } else if (isPointInLake(engine.playerPos.x, engine.playerPos.z)) {
         fortniteAudio.playWaterSplash();
       } else {
         const surface = getGroundSurface(
@@ -529,7 +551,7 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
   const prevFallY = engine.playerPos.y;
   engine.playerPos.y += engine.playerVel.y * dt;
 
-  // Solid Ceiling Collision: Prevent jumping upward through player-built floors or cone roofs
+  // Solid Ceiling Collision: Prevent jumping upward through player-built floors/cones OR static building floor/roof slabs
   if (engine.playerVel.y > 0) {
     const playerHeadY = engine.playerPos.y + 1.85;
     const nearbyCeilings = engine.spatialGrid.queryBuildingPiecesNear(engine.playerPos.x, engine.playerPos.z, 2.5);
@@ -539,6 +561,38 @@ export function updateSkydivingAndMovementImpl(engine: FortniteEngine, dt: numbe
         if (Math.abs(engine.playerPos.x - piece.x) <= 2.1 && Math.abs(engine.playerPos.z - piece.z) <= 2.1) {
           if (playerHeadY >= piece.y - 0.25 && engine.playerPos.y < piece.y) {
             engine.playerPos.y = piece.y - 1.9;
+            engine.playerVel.y = 0;
+            break;
+          }
+        }
+      }
+    }
+    // Check static building floor/ceiling slabs overhead
+    if (engine.playerVel.y > 0) {
+      const staticOverhead = engine.spatialGrid.queryNear(engine.playerPos.x, engine.playerPos.z, 2.5);
+      for (let i = 0; i < staticOverhead.length; i++) {
+        const col = staticOverhead[i];
+        if (
+          col.type === 'box' &&
+          col.minX !== undefined &&
+          col.maxX !== undefined &&
+          col.minZ !== undefined &&
+          col.maxZ !== undefined &&
+          col.minY !== undefined &&
+          col.maxY !== undefined
+        ) {
+          // Thin horizontal slab (thickness <= 1.2m) above player's feet
+          const slabThickness = col.maxY - col.minY;
+          if (
+            slabThickness <= 1.2 &&
+            engine.playerPos.x >= col.minX &&
+            engine.playerPos.x <= col.maxX &&
+            engine.playerPos.z >= col.minZ &&
+            engine.playerPos.z <= col.maxZ &&
+            playerHeadY >= col.minY &&
+            engine.playerPos.y + 0.5 < col.minY
+          ) {
+            engine.playerPos.y = col.minY - 1.88;
             engine.playerVel.y = 0;
             break;
           }
@@ -700,49 +754,53 @@ export function updateCameraAndRigsImpl(engine: FortniteEngine, dt: number) {
     }
   } else {
     const isAim = engine.isAimingDownSights;
-    const baseOffset = isAim
-      ? new THREE.Vector3(0.7, 0.2, 1.8) // tighter right-shoulder ADS
-      : engine.isSkydiving
-      ? new THREE.Vector3(0.0, 0.6, 5.5) // skydiving center follow
-      : new THREE.Vector3(1.1, 0.35, 3.2); // +X right shoulder, +Y height, +Z distance
-    const camOffset = baseOffset.clone();
-    camOffset.applyQuaternion(engine.camera.quaternion);
+    if (isAim) {
+      _scratchCamOffset.set(0.7, 0.2, 1.8);
+    } else if (engine.isSkydiving) {
+      _scratchCamOffset.set(0.0, 0.6, 5.5);
+    } else {
+      _scratchCamOffset.set(1.1, 0.35, 3.2);
+    }
+    _scratchCamOffset.applyQuaternion(engine.camera.quaternion);
 
     // Upright, yaw-stabilized camera anchor at character eye level
-    const anchorPos = new THREE.Vector3(engine.playerPos.x, engine.playerPos.y + eyeHeight, engine.playerPos.z);
-    let targetCamPos = anchorPos.clone().add(camOffset);
+    _scratchAnchorPos.set(engine.playerPos.x, engine.playerPos.y + eyeHeight, engine.playerPos.z);
+    _scratchTargetCamPos.copy(_scratchAnchorPos).add(_scratchCamOffset);
 
     // CAMERA OBSTRUCTION AVOIDANCE & WALL-CLIPPING PREVENTION
     // Cast a probe ray from anchor to target camera position against static walls and building pieces
-    const rayDir = new THREE.Vector3().subVectors(targetCamPos, anchorPos);
-    const maxCamDist = rayDir.length();
+    _scratchRayDir.subVectors(_scratchTargetCamPos, _scratchAnchorPos);
+    const maxCamDist = _scratchRayDir.length();
     if (maxCamDist > 0.001) {
-      rayDir.normalize();
+      _scratchRayDir.normalize();
       let clampedDist = maxCamDist;
 
       // 1. Query static environment colliders (walls, buildings, rocks)
-      const nearbyColliders = engine.spatialGrid.queryRay(anchorPos.x, anchorPos.z, targetCamPos.x, targetCamPos.z);
-      const probeBox = new THREE.Box3();
-      const probeHit = new THREE.Vector3();
-      const camRay = new THREE.Ray(anchorPos, rayDir);
+      const nearbyColliders = engine.spatialGrid.queryRay(
+        _scratchAnchorPos.x,
+        _scratchAnchorPos.z,
+        _scratchTargetCamPos.x,
+        _scratchTargetCamPos.z
+      );
+      _scratchCamRay.set(_scratchAnchorPos, _scratchRayDir);
 
       for (let i = 0; i < nearbyColliders.length; i++) {
         const sc = nearbyColliders[i];
         if (sc.type === 'box' && sc.minX !== undefined && sc.maxX !== undefined) {
-          probeBox.min.set(sc.minX, sc.minY ?? 0, sc.minZ!);
-          probeBox.max.set(sc.maxX, sc.maxY ?? 100, sc.maxZ!);
-          if (camRay.intersectBox(probeBox, probeHit)) {
-            const d = anchorPos.distanceTo(probeHit);
+          _scratchProbeBox.min.set(sc.minX, sc.minY ?? 0, sc.minZ!);
+          _scratchProbeBox.max.set(sc.maxX, sc.maxY ?? 100, sc.maxZ!);
+          if (_scratchCamRay.intersectBox(_scratchProbeBox, _scratchProbeHit)) {
+            const d = _scratchAnchorPos.distanceTo(_scratchProbeHit);
             if (d < clampedDist) {
               clampedDist = Math.max(0.55, d - 0.3); // 30cm safety buffer inside walls
             }
           }
         } else if (sc.type === 'cylinder' && sc.x !== undefined && sc.z !== undefined && sc.radius !== undefined) {
           const r = sc.radius;
-          probeBox.min.set(sc.x - r, sc.minY ?? 0, sc.z - r);
-          probeBox.max.set(sc.x + r, sc.maxY ?? 100, sc.z + r);
-          if (camRay.intersectBox(probeBox, probeHit)) {
-            const d = anchorPos.distanceTo(probeHit);
+          _scratchProbeBox.min.set(sc.x - r, sc.minY ?? 0, sc.z - r);
+          _scratchProbeBox.max.set(sc.x + r, sc.maxY ?? 100, sc.z + r);
+          if (_scratchCamRay.intersectBox(_scratchProbeBox, _scratchProbeHit)) {
+            const d = _scratchAnchorPos.distanceTo(_scratchProbeHit);
             if (d < clampedDist) {
               clampedDist = Math.max(0.55, d - 0.3);
             }
@@ -751,13 +809,18 @@ export function updateCameraAndRigsImpl(engine: FortniteEngine, dt: number) {
       }
 
       // 2. Query player building pieces (walls, ramps)
-      const nearbyPieces = engine.spatialGrid.queryBuildingPiecesRay(anchorPos.x, anchorPos.z, targetCamPos.x, targetCamPos.z);
+      const nearbyPieces = engine.spatialGrid.queryBuildingPiecesRay(
+        _scratchAnchorPos.x,
+        _scratchAnchorPos.z,
+        _scratchTargetCamPos.x,
+        _scratchTargetCamPos.z
+      );
       for (let i = 0; i < nearbyPieces.length; i++) {
         const piece = nearbyPieces[i];
-        probeBox.min.set(piece.x - 2.1, piece.y - 0.2, piece.z - 2.1);
-        probeBox.max.set(piece.x + 2.1, piece.y + 4.2, piece.z + 2.1);
-        if (camRay.intersectBox(probeBox, probeHit)) {
-          const d = anchorPos.distanceTo(probeHit);
+        _scratchProbeBox.min.set(piece.x - 2.1, piece.y - 0.2, piece.z - 2.1);
+        _scratchProbeBox.max.set(piece.x + 2.1, piece.y + 4.2, piece.z + 2.1);
+        if (_scratchCamRay.intersectBox(_scratchProbeBox, _scratchProbeHit)) {
+          const d = _scratchAnchorPos.distanceTo(_scratchProbeHit);
           if (d < clampedDist) {
             clampedDist = Math.max(0.55, d - 0.3);
           }
@@ -765,19 +828,23 @@ export function updateCameraAndRigsImpl(engine: FortniteEngine, dt: number) {
       }
 
       // Recompute target camera pos with obstacle clearance
-      targetCamPos = anchorPos.clone().addScaledVector(rayDir, clampedDist);
+      _scratchTargetCamPos.copy(_scratchAnchorPos).addScaledVector(_scratchRayDir, clampedDist);
 
       // Floor clearance check: ensure camera never dips below terrain
-      const terrainAtCam = engine.getGroundElevationAt(targetCamPos.x, targetCamPos.z, targetCamPos.y);
-      if (targetCamPos.y < terrainAtCam + 0.35) {
-        targetCamPos.y = terrainAtCam + 0.35;
+      const terrainAtCam = engine.getGroundElevationAt(
+        _scratchTargetCamPos.x,
+        _scratchTargetCamPos.z,
+        _scratchTargetCamPos.y
+      );
+      if (_scratchTargetCamPos.y < terrainAtCam + 0.35) {
+        _scratchTargetCamPos.y = terrainAtCam + 0.35;
       }
     }
 
     // Smooth exponential damping to eliminate camera oscillation and jitter
-    engine.camera.position.x = THREE.MathUtils.damp(engine.camera.position.x, targetCamPos.x, 22.0, dt);
-    engine.camera.position.y = THREE.MathUtils.damp(engine.camera.position.y, targetCamPos.y, 22.0, dt);
-    engine.camera.position.z = THREE.MathUtils.damp(engine.camera.position.z, targetCamPos.z, 22.0, dt);
+    engine.camera.position.x = THREE.MathUtils.damp(engine.camera.position.x, _scratchTargetCamPos.x, 22.0, dt);
+    engine.camera.position.y = THREE.MathUtils.damp(engine.camera.position.y, _scratchTargetCamPos.y, 22.0, dt);
+    engine.camera.position.z = THREE.MathUtils.damp(engine.camera.position.z, _scratchTargetCamPos.z, 22.0, dt);
 
     if (engine.thirdPersonRig) {
       engine.thirdPersonRig.root.position.copy(engine.playerPos);

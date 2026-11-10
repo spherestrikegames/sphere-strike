@@ -171,7 +171,7 @@ export function updateDroppedSuppliesImpl(engine: FortniteEngine, dt: number) {
     }
 
     // Auto-vacuum materials & ammo within 2.8m
-    const dist = engine.playerPos.distanceTo(new THREE.Vector3(item.x, item.y, item.z));
+    const dist = Math.hypot(engine.playerPos.x - item.x, engine.playerPos.y - item.y, engine.playerPos.z - item.z);
     if (dist < 2.8 && item.type !== 'weapon') {
       if (item.type === 'wood') {
         engine.wood = Math.min(999, engine.wood + item.amount);
@@ -241,11 +241,11 @@ export function updateDroppedSuppliesImpl(engine: FortniteEngine, dt: number) {
     }
   }
 
-  // 2. Parachute Supply Drop Boxes
+  // 2. Parachute Supply Drop Boxes (use authoritative map elevation)
   for (const box of engine.supplyDropBoxes) {
     if (!box.isLanded) {
       box.y += box.vy * dt;
-      const groundH = getTerrainHeight(box.x, box.z) + 1.1;
+      const groundH = engine.getGroundElevationAt(box.x, box.z, box.y) + 0.1;
       if (box.y <= groundH) {
         box.y = groundH;
         box.isLanded = true;

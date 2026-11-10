@@ -14,9 +14,8 @@ export function placeBuildingPieceImpl(engine: FortniteEngine) {
     return;
   }
 
-  if (engine.getCurrentWeapon()?.type !== 'pickaxe') {
-    engine.isBuildMode = false;
-    if (engine.hologramMesh) engine.hologramMesh.visible = false;
+  // Fast 2v2.io / Fortnite Building: allow building immediately whenever isBuildMode is active
+  if (!engine.isBuildMode) {
     return;
   }
 
@@ -29,6 +28,22 @@ export function placeBuildingPieceImpl(engine: FortniteEngine) {
   engine.camera.getWorldDirection(camDir);
 
   const snapped = snapToBuildGrid(engine.playerPos, camDir, engine.selectedBuildType);
+
+  // Prevent placing duplicate piece in the exact same grid cell & orientation
+  const existingNear = engine.spatialGrid.queryBuildingPiecesNear(snapped.x, snapped.z, 1.2);
+  for (let i = 0; i < existingNear.length; i++) {
+    const ex = existingNear[i];
+    if (
+      ex.type === engine.selectedBuildType &&
+      Math.abs(ex.x - snapped.x) < 0.25 &&
+      Math.abs(ex.y - snapped.y) < 0.25 &&
+      Math.abs(ex.z - snapped.z) < 0.25 &&
+      Math.abs(ex.rotY - snapped.rotY) < 0.25
+    ) {
+      return;
+    }
+  }
+
   const pieceId = `build_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
   const matInfo = MATERIAL_STATS[engine.selectedMaterial];
@@ -190,9 +205,10 @@ export function updateVehicleDrivingImpl(engine: FortniteEngine, dt: number) {
     v.speed = -v.speed * 0.25; // Bounce off solid obstacle
   }
 
-  // Keep within island bounds
-  v.x = Math.max(-270, Math.min(270, resolved.x));
-  v.z = Math.max(-270, Math.min(270, resolved.z));
+  // Keep within active map bounds (410m on Strike Island, 270m on smaller maps)
+  const maxBound = engine.mapManager?.currentMapIndex === 0 ? 410 : 270;
+  v.x = Math.max(-maxBound, Math.min(maxBound, resolved.x));
+  v.z = Math.max(-maxBound, Math.min(maxBound, resolved.z));
   v.y = groundH + 0.35;
 
   // Sync player position to vehicle

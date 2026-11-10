@@ -259,36 +259,43 @@ export default function App() {
     fortniteAudio.applySettings(newSettings);
   }, []);
 
-  // Start Battle Royale Match
+  // Start Match across any mode (Battle Royale, 2v2 Squad Clash, 1v1 Aim Duel, Free For All, Practice, AI Knockout)
   const handleStartMatch = useCallback(() => {
-    // Hard check: Battle Royale requires being in a global server or having a friend party
     if (selectedMode === 'battle_royale') {
       const partyCode = (multiplayerClient.partyState.code || '').trim().toUpperCase();
-      const isGlobal = partyCode === 'ROYALE-GLOBAL' || partyCode.startsWith('GLOBAL');
-      const hasSquad = multiplayerClient.partyState.members.length > 1;
-      if (!isGlobal && !hasSquad) {
-        console.warn('Battle Royale drop is restricted: player must be in a global server or friend party.');
-        return;
+      if (!partyCode) {
+        multiplayerClient.connectWithCode('ROYALE-GLOBAL', {
+          name: profile.name,
+          skinId: profile.selectedSkin,
+          level: profile.level,
+        });
       }
     }
 
     fortniteAudio.startGameMusic();
     setGameState('playing');
-    setHealth(250);
-    setShield(100);
+    setHealth(selectedMode === '1v1' || selectedMode === '1v1_build_fight' ? 300 : 250);
+    setShield(selectedMode === '1v1' || selectedMode === '1v1_build_fight' ? 300 : 100);
     setWood(300);
     setStone(150);
     setMetal(80);
     setEliminations(0);
-    setPlayersLeft(selectedMode === 'first_person_royale' ? 25 : Math.max(2, multiplayerClient.partyState.members.length));
+    setPlayersLeft(
+      selectedMode === '2v2'
+        ? 4
+        : selectedMode === '1v1' || selectedMode === '1v1_build_fight'
+        ? 2
+        : 25
+    );
     setMatchStats(null);
-    setIsSkydiving(true);
+    setIsSkydiving(selectedMode !== '1v1' && selectedMode !== '1v1_build_fight');
     setIsGliding(false);
-    setAltitude(220);
+    setAltitude(selectedMap === 'strike_island' ? 260 : 220);
     setTouchdownBanner(false);
     setEliminationBanner(null);
     setKillFeed([]);
     setPickupNotifications([]);
+    setIsBuildMode(false);
 
     setTimeout(() => {
       if (!canvasRef.current) return;
@@ -374,6 +381,11 @@ export default function App() {
         onPlayerPositionUpdate: (coords) => {
           setPlayerCoords(coords);
         },
+        onBuildStateChange: (buildMode, bType, mat) => {
+          setIsBuildMode(buildMode);
+          setSelectedBuildType(bType);
+          setSelectedMaterial(mat);
+        },
         onArena1v1Update: (arenaState) => {
           setArena1v1State({ ...arenaState });
         },
@@ -445,10 +457,28 @@ export default function App() {
   useEffect(() => {
     multiplayerClient.setHandlers({
       onMatchStart: (_seed, _roomCode, mode, map) => {
-        if (mode && (mode === 'battle_royale' || mode === 'first_person_royale' || mode === '1v1_build_fight')) {
+        if (
+          mode &&
+          (mode === 'battle_royale' ||
+            mode === '2v2' ||
+            mode === '1v1' ||
+            mode === 'free_for_all' ||
+            mode === 'practice' ||
+            mode === 'first_person_royale' ||
+            mode === '1v1_build_fight')
+        ) {
           setSelectedMode(mode as GameMode);
         }
-        if (map && (map === 'island_2v2' || map === 'tilted_skyscrapers' || map === 'pleasant_valley')) {
+        if (
+          map &&
+          (map === 'strike_island' ||
+            map === 'pinecrest_suburb' ||
+            map === 'apex_metropolis' ||
+            map === 'harvest_ridge' ||
+            map === 'island_2v2' ||
+            map === 'tilted_skyscrapers' ||
+            map === 'pleasant_valley')
+        ) {
           setSelectedMap(map as BattlegroundMap);
         }
         handleStartMatch();

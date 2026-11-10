@@ -136,7 +136,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   const cleanPartyCode = (party.code || '').trim().toUpperCase();
   const isGlobalServer = cleanPartyCode === 'ROYALE-GLOBAL' || cleanPartyCode.startsWith('GLOBAL');
   const hasFriendParty = party.members.length > 1;
-  const isBattleRoyaleLocked = selectedMode === 'battle_royale' && !isGlobalServer && !hasFriendParty;
+  const isBattleRoyaleLocked = false;
 
   const currentSkin =
     FORTNITE_SKINS.find((s) => s.id === profile.selectedSkin) || FORTNITE_SKINS[0];
@@ -278,7 +278,25 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
   };
 
   const handleQuickMatch = () => {
-    multiplayerClient.quickMatch({
+    if (selectedMode === '2v2') {
+      multiplayerClient.join2v2Matchmaking({
+        name: profile.name,
+        skinId: profile.selectedSkin,
+        level: profile.level,
+      });
+    } else {
+      multiplayerClient.quickMatch({
+        name: profile.name,
+        skinId: profile.selectedSkin,
+        level: profile.level,
+      });
+    }
+    fortniteAudio.playUiClick();
+  };
+
+  const handleJoin2v2Matchmaking = () => {
+    onSelectMode('2v2');
+    multiplayerClient.join2v2Matchmaking({
       name: profile.name,
       skinId: profile.selectedSkin,
       level: profile.level,
@@ -342,14 +360,18 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
     {
       id: 'battle_royale',
       name: 'BATTLE ROYALE',
-      tag: isBattleRoyaleLocked ? '🔒 SERVER/SQUAD REQUIRED' : isGlobalServer ? '🌐 GLOBAL SERVER READY' : '👥 SQUAD READY',
-      desc: isBattleRoyaleLocked
-        ? 'Locked: Pure multiplayer PvP! Connect to the Global Server or invite a friend to unlock drop.'
-        : 'Real players only — zero AI bots! Drop into Strike Island with friends or global server players for pure Battle Royale PvP.',
-      icon: isBattleRoyaleLocked ? '🔒' : '🌐',
-      bg: isBattleRoyaleLocked ? 'from-rose-900/80 to-slate-900/90' : 'from-amber-600/90 to-rose-900/90',
-      onlineOnly: true,
-      isLocked: isBattleRoyaleLocked,
+      tag: '🏝️ 25-PLAYER ISLAND DROP',
+      desc: 'Drop onto the massive 840m Strike Island across 10 POIs with vehicles, tactical building & online + AI squad combat!',
+      icon: '🌐',
+      bg: 'from-amber-600/90 to-rose-900/90',
+    },
+    {
+      id: '2v2',
+      name: '2V2 BATTLE ROYALE',
+      tag: '⚡ 2V2.IO CLASH • DUO BUILD',
+      desc: 'Fast-paced 2v2 Battle Royale! Team ALPHA (You + Duo Partner) vs Team OMEGA with instant building & tactical gunplay.',
+      icon: '👥',
+      bg: 'from-cyan-600/70 to-slate-900/90',
     },
     {
       id: '1v1',
@@ -358,14 +380,6 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
       desc: 'Intense 1-on-1 aim duel! Instant respawns, 600 HP (300 HP + 300 Shield), and selectable bot difficulty or friend duel.',
       icon: '⚔️',
       bg: 'from-indigo-600/70 to-slate-900/90',
-    },
-    {
-      id: '2v2',
-      name: '2V2 SQUAD CLASH',
-      tag: '2V2 TEAM DUEL',
-      desc: 'Team up with a partner or bot and face off against a rival duo in tactical sector combat.',
-      icon: '👥',
-      bg: 'from-cyan-600/70 to-slate-900/90',
     },
     {
       id: 'free_for_all',
@@ -655,8 +669,8 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
             })}
           </div>
 
-          {/* AI HARDNESS SELECTION (Shown prominently when 1v1 Arena is selected or as a general practice setting) */}
-          {selectedMode === '1v1_build_fight' && (
+          {/* AI HARDNESS SELECTION (Available for all combat modes: Battle Royale, 2v2, 1v1, FFA, AI Knockout) */}
+          {selectedMode !== 'practice' && (
             <div className="mt-2 p-3 rounded-2xl bg-black/70 border border-purple-400/40 backdrop-blur-md flex flex-col gap-2 shadow-xl animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-black tracking-wider text-purple-300 uppercase flex items-center gap-1.5">
@@ -701,7 +715,7 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
           )}
 
           {/* PRE-GAME MAP SELECTION LOBBY */}
-          {selectedMode !== '1v1_build_fight' && (
+          {selectedMode !== '1v1_build_fight' && selectedMode !== '1v1' && (
             <div className="mt-2.5 p-3 rounded-2xl bg-black/70 border border-emerald-500/40 backdrop-blur-md flex flex-col gap-2 shadow-xl animate-in fade-in duration-200">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-black tracking-wider text-emerald-300 uppercase flex items-center gap-1.5">
@@ -975,12 +989,12 @@ export const FortniteLobby: React.FC<FortniteLobbyProps> = ({
 
               <button
                 type="button"
-                onClick={handleQuickMatch}
-                className="py-2 px-2 rounded-xl bg-gradient-to-r from-purple-700/80 to-indigo-700/80 hover:from-purple-600 hover:to-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-purple-400/30 shadow-md transition-all cursor-pointer"
-                title="Quick Match: Automatically match with active players"
+                onClick={handleJoin2v2Matchmaking}
+                className="py-2 px-2 rounded-xl bg-gradient-to-r from-cyan-600/90 to-blue-700/90 hover:from-cyan-500 hover:to-blue-600 text-white text-xs font-black flex items-center justify-center gap-1.5 border border-cyan-400/50 shadow-md transition-all cursor-pointer"
+                title="2v2 Matchmaking: Join a 4-player 2v2 Battle Royale room (Team ALPHA vs Team OMEGA)"
               >
                 <Zap className="w-3.5 h-3.5 text-yellow-300" />
-                <span>QUICK MATCH</span>
+                <span>2V2 MATCHMAKING</span>
               </button>
 
               <button

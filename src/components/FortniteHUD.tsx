@@ -182,7 +182,7 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMapExpanded]);
-  const is1v1Mode = gameMode === '1v1_build_fight';
+  const is1v1Mode = gameMode === '1v1_build_fight' || gameMode === '1v1';
   const effectiveMaxHealth = propMaxHealth ?? (is1v1Mode ? 300 : 250);
   const effectiveMaxShield = propMaxShield ?? (is1v1Mode ? 300 : 250);
 
@@ -361,7 +361,7 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
       )}
 
       {/* 1V1 ROUND OVER BANNER */}
-      {gameMode === '1v1_build_fight' && arena1v1State?.isRoundOver && (
+      {is1v1Mode && arena1v1State?.isRoundOver && (
         <div className="absolute top-36 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2 animate-in zoom-in-90 duration-200">
           <div className={`flex flex-col items-center px-8 py-4 rounded-3xl backdrop-blur-xl border-2 shadow-[0_0_50px_rgba(0,0,0,0.8)] ${
             arena1v1State.roundWinner === 'player'
@@ -397,10 +397,15 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
               <span>BATTLE ROYALE • ONLINE</span>
             </div>
-          ) : gameMode === '1v1_build_fight' ? (
+          ) : is1v1Mode ? (
             <div className="flex items-center gap-2 bg-gradient-to-r from-amber-600 to-rose-600 backdrop-blur-md px-3 py-1 rounded-xl border border-amber-400 text-white font-black text-xs shadow-lg">
               <Swords className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-              <span>1V1 BUILD FIGHT ARENA</span>
+              <span>1V1 AIM DUEL ARENA</span>
+            </div>
+          ) : gameMode === '2v2' ? (
+            <div className="flex items-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-700 backdrop-blur-md px-3 py-1 rounded-xl border border-cyan-400 text-white font-black text-xs shadow-lg shadow-cyan-900/40">
+              <span className="w-2 h-2 rounded-full bg-cyan-300 animate-ping" />
+              <span>2V2 BATTLE ROYALE • TEAM ALPHA</span>
             </div>
           ) : gameMode === 'first_person_royale' ? (
             <div className="flex items-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-700 backdrop-blur-md px-3 py-1 rounded-xl border border-cyan-400 text-white font-black text-xs shadow-lg shadow-cyan-900/40">
@@ -421,7 +426,7 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               <div className="flex flex-col">
                 <span className="text-[9px] font-bold text-slate-400 leading-none">ALIVE</span>
                 <span className="font-mono text-base sm:text-lg font-black text-white leading-none">
-                  {gameMode === '1v1_build_fight' ? 2 : playersLeft}
+                  {is1v1Mode ? 2 : playersLeft}
                 </span>
               </div>
             </div>
@@ -530,7 +535,32 @@ export const FortniteHUD: React.FC<FortniteHUDProps> = React.memo(({
               )}
             </div>
           </div>
-        ) : gameMode === '1v1_build_fight' ? (
+        ) : gameMode === '2v2' ? (
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="flex items-center gap-4 px-5 py-2 rounded-3xl bg-black/85 backdrop-blur-md border-2 border-cyan-400/80 shadow-[0_0_25px_rgba(6,182,212,0.4)] text-white">
+              <div className="flex items-center gap-2">
+                <span className="font-black text-xs sm:text-sm text-cyan-400 tracking-wider">🛡️ TEAM ALPHA</span>
+                <span className="font-mono text-sm sm:text-base font-black text-white px-2.5 py-0.5 rounded-lg bg-cyan-950/80 border border-cyan-400/50">
+                  YOU + DUO
+                </span>
+              </div>
+              <div className="flex flex-col items-center px-1">
+                <span className="text-[9px] font-mono text-amber-300 font-black tracking-widest uppercase">
+                  2V2 BATTLE ROYALE
+                </span>
+                <span className="text-[10px] font-bold text-slate-300">
+                  INSTANT BUILD [Q/F/R/T]
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-sm sm:text-base font-black text-rose-300 px-2.5 py-0.5 rounded-lg bg-rose-950/80 border border-rose-400/50">
+                  {Math.max(0, playersLeft - 2)} ALIVE
+                </span>
+                <span className="font-black text-xs sm:text-sm text-rose-400 tracking-wider">⚔️ TEAM OMEGA</span>
+              </div>
+            </div>
+          </div>
+        ) : is1v1Mode ? (
           <div className="flex flex-col items-center gap-1.5">
             <div className="flex items-center gap-4 px-5 py-2 rounded-3xl bg-black/85 backdrop-blur-md border-2 border-amber-400/80 shadow-[0_0_25px_rgba(245,158,11,0.4)] text-white">
               <div className="flex items-center gap-2">

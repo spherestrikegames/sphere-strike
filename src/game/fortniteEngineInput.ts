@@ -93,7 +93,7 @@ export function onKeyDownImpl(engine: FortniteEngine, e: KeyboardEvent) {
     }
   }
 
-  // Building Mode Toggle ('Q', 'F', 'R', 'T')
+  // Building Mode Toggle ('Q' Wall, 'F' Floor, 'R' Ramp/Reload, 'T' Roof, 'G' Material Cycle)
   if (e.code === 'KeyQ') {
     engine.toggleBuildMode('wall');
   }
@@ -104,13 +104,24 @@ export function onKeyDownImpl(engine: FortniteEngine, e: KeyboardEvent) {
       engine.toggleBuildMode('floor');
     }
   }
-  if (e.code === 'KeyR' && engine.isBuildMode) {
-    engine.toggleBuildMode('ramp');
-  } else if (e.code === 'KeyR' && !engine.isBuildMode) {
-    engine.startReload();
+  if (e.code === 'KeyR') {
+    const wep = engine.getCurrentWeapon();
+    const needsReload = wep && wep.type !== 'pickaxe' && wep.type !== 'heal' && wep.type !== 'shield' && wep.currentAmmo < wep.magazineSize;
+    if (!engine.isBuildMode && needsReload) {
+      engine.startReload();
+    } else {
+      engine.toggleBuildMode('ramp');
+    }
   }
   if (e.code === 'KeyT') {
     engine.toggleBuildMode('cone');
+  }
+  if (e.code === 'KeyG' && engine.isBuildMode) {
+    const mats: Array<'wood' | 'stone' | 'metal'> = ['wood', 'stone', 'metal'];
+    const idx = mats.indexOf(engine.selectedMaterial);
+    engine.selectedMaterial = mats[(idx + 1) % mats.length];
+    fortniteAudio.playUiClick();
+    engine.callbacks.onBuildStateChange?.(engine.isBuildMode, engine.selectedBuildType, engine.selectedMaterial);
   }
 
   // Interact / Drive Vehicle / Loot Chest / Pick up Supply ('E')
@@ -244,8 +255,16 @@ export function onMouseDownImpl(engine: FortniteEngine, e: MouseEvent) {
       engine.fireActiveWeapon();
     }
   } else if (e.button === 2) {
-    engine.isRightMouseDown = true;
-    engine.isAimingDownSights = true;
+    if (engine.isBuildMode) {
+      const mats: Array<'wood' | 'stone' | 'metal'> = ['wood', 'stone', 'metal'];
+      const idx = mats.indexOf(engine.selectedMaterial);
+      engine.selectedMaterial = mats[(idx + 1) % mats.length];
+      fortniteAudio.playUiClick();
+      engine.callbacks.onBuildStateChange?.(engine.isBuildMode, engine.selectedBuildType, engine.selectedMaterial);
+    } else {
+      engine.isRightMouseDown = true;
+      engine.isAimingDownSights = true;
+    }
   }
 }
 
@@ -269,20 +288,19 @@ export function setActiveSlotImpl(engine: FortniteEngine, slotIndex: number) {
   if (slotIndex < 0 || slotIndex >= engine.inventory.length) return;
   engine.activeSlot = slotIndex;
 
-  // Only allow building when holding the Pickaxe (Slot 0 / type 'pickaxe')
-  if (engine.inventory[slotIndex]?.type !== 'pickaxe') {
-    engine.isBuildMode = false;
-    if (engine.hologramMesh) engine.hologramMesh.visible = false;
-  }
+  // Switching to any weapon slot cleanly exits build mode so player can shoot immediately
+  engine.isBuildMode = false;
+  if (engine.hologramMesh) engine.hologramMesh.visible = false;
 
   engine.updateWeaponRigs();
   engine.callbacks.onInventoryChange(engine.inventory, engine.activeSlot);
+  engine.callbacks.onBuildStateChange?.(engine.isBuildMode, engine.selectedBuildType, engine.selectedMaterial);
 }
 
 export function toggleBuildModeImpl(engine: FortniteEngine, type: BuildType) {
   if (engine.activeVehicle) return;
 
-  if (engine.mode === '1v1_build_fight') {
+  if (engine.mode === '1v1_build_fight' || engine.mode === '1v1') {
     if (engine.callbacks.onItemCollected) {
       engine.callbacks.onItemCollected({
         id: `nobuild_${Date.now()}`,
@@ -298,16 +316,7 @@ export function toggleBuildModeImpl(engine: FortniteEngine, type: BuildType) {
     return;
   }
 
-  // Automatically equip Pickaxe (Slot 0) when entering build mode
-  if (engine.getCurrentWeapon()?.type !== 'pickaxe') {
-    const pickaxeIdx = engine.inventory.findIndex((w) => w.type === 'pickaxe');
-    if (pickaxeIdx !== -1) {
-      engine.activeSlot = pickaxeIdx;
-      engine.updateWeaponRigs();
-      engine.callbacks.onInventoryChange(engine.inventory, engine.activeSlot);
-    }
-  }
-
+  // Fast 2v2.io / Fortnite Building: enter build mode immediately from ANY weapon slot without losing active weapon!
   if (engine.isBuildMode && engine.selectedBuildType === type) {
     engine.isBuildMode = false;
     if (engine.hologramMesh) engine.hologramMesh.visible = false;
@@ -322,6 +331,7 @@ export function toggleBuildModeImpl(engine: FortniteEngine, type: BuildType) {
     }
     fortniteAudio.playUiClick();
   }
+  engine.callbacks.onBuildStateChange?.(engine.isBuildMode, engine.selectedBuildType, engine.selectedMaterial);
 }
 
 export function updateWeaponRigsImpl(engine: FortniteEngine) {

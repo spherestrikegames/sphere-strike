@@ -37,8 +37,8 @@ export function setupLightingImpl(engine: FortniteEngine) {
   engine.sunLight.shadow.camera.bottom = -d;
   engine.scene.add(engine.sunLight);
 
-  // Soft Exponential Horizon Fog matching sky-blue
-  engine.scene.fog = new THREE.FogExp2(0x87ceeb, 0.0075);
+  // Crisp long-range atmospheric horizon fog so all 10 POIs on the 840m island are clearly visible
+  engine.scene.fog = new THREE.FogExp2(0x87ceeb, 0.0012);
 
   // Mandatory Studio Environment Reflection (RoomEnvironment) for glossy acrylic & metal materials
   try {
@@ -174,10 +174,11 @@ export function setupScopeVisualizerImpl(engine: FortniteEngine) {
 }
 
 export function spawnBotsImpl(engine: FortniteEngine, count: number) {
-  if (engine.mode === '1v1_build_fight') {
-    const diff = engine.arena1v1State.botDifficulty || 'pro';
-    const config = getBotDifficultyConfig(diff);
+  const diff = engine.arena1v1State.botDifficulty || 'pro';
+  const config = getBotDifficultyConfig(diff);
 
+  // 1. 1v1 Aim Duel / Build Fight Mode
+  if (engine.mode === '1v1' || engine.mode === '1v1_build_fight') {
     const bot: BotPlayer = {
       id: 'bot_1v1_opponent',
       name: config.name,
@@ -225,12 +226,107 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
     return;
   }
 
-  if (engine.mode !== 'first_person_royale') {
-    // In Battle Royale and other modes, NO AI bots are spawned - pure real player multiplayer!
+  // 2. 2v2 Squad Clash / 2v2 Battle Royale Mode (Team ALPHA vs Team OMEGA)
+  if (engine.mode === '2v2') {
+    const duoPresets: Array<{
+      id: string;
+      name: string;
+      team: TeamType;
+      skinId: string;
+      x: number;
+      z: number;
+      wep: any;
+      tint: number;
+    }> = [
+      {
+        id: 'bot_duo_ally',
+        name: '🛡️ [ALPHA] Vanguard_Duo',
+        team: 'ALPHA',
+        skinId: 'midas',
+        x: 12,
+        z: -14,
+        wep: WEAPON_REGISTRY.ar_scar,
+        tint: 0x38bdf8,
+      },
+      {
+        id: 'bot_duo_omega_1',
+        name: '⚔️ [OMEGA] Striker_One',
+        team: 'OMEGA',
+        skinId: 'black_knight',
+        x: -24,
+        z: 34,
+        wep: WEAPON_REGISTRY.shotgun_pump_epic,
+        tint: 0xef4444,
+      },
+      {
+        id: 'bot_duo_omega_2',
+        name: '⚔️ [OMEGA] Phantom_Two',
+        team: 'OMEGA',
+        skinId: 'renegade_raider',
+        x: 24,
+        z: 36,
+        wep: WEAPON_REGISTRY.ar_scar,
+        tint: 0xef4444,
+      },
+    ];
+
+    for (const preset of duoPresets) {
+      const groundY = engine.getGroundElevationAt(preset.x, preset.z, 30);
+      const bot: BotPlayer = {
+        id: preset.id,
+        name: preset.name,
+        isAI: true,
+        team: preset.team,
+        skinId: preset.skinId,
+        x: preset.x,
+        y: groundY,
+        z: preset.z,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        rotY: preset.team === 'ALPHA' ? 0 : Math.PI,
+        pitch: 0,
+        health: 250,
+        shield: 100,
+        isAlive: true,
+        isGrounded: true,
+        weapon: { ...(preset.wep || WEAPON_REGISTRY.ar_scar) },
+        targetPos: null,
+        state: 'combat',
+        lastShotTime: 0,
+        accuracy: config.accuracy * 0.75,
+        reactionTimer: Math.max(0.35, config.reactionTimer * 1.4),
+        kills: 0,
+        lastBuildTime: 0,
+      };
+      engine.bots.push(bot);
+
+      const rig = buildSphereCharacterRig(preset.skinId, bot.weapon.type, bot.weapon.rarity, preset.tint);
+      rig.root.position.set(bot.x, bot.y, bot.z);
+
+      const nameTag = createNameTagSprite(
+        bot.name,
+        true,
+        bot.team,
+        bot.health / 250,
+        bot.shield / 100
+      );
+      rig.root.add(nameTag);
+      engine.botNameTags.set(bot.id, nameTag);
+
+      engine.scene.add(rig.root);
+      engine.botMeshes.set(bot.id, rig);
+    }
+    return;
+  }
+
+  // 3. Practice Sandbox Mode -> No AI bots unless requested
+  if (engine.mode === 'practice' || count <= 0) {
     engine.bots = [];
     return;
   }
 
+  // 4. Battle Royale / Free For All / AI Knockout (24 Dynamic Island Combatants)
   const botWeapons = [
     WEAPON_REGISTRY.ar_scar,
     WEAPON_REGISTRY.shotgun_pump_epic,
@@ -241,7 +337,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
     WEAPON_REGISTRY.ar_common,
   ].filter(Boolean);
 
-  const teamList: TeamType[] = ['OMEGA', 'SHADOW', 'PHOENIX', 'ALPHA'];
+  const enemyTeams: TeamType[] = ['OMEGA', 'SHADOW', 'PHOENIX'];
   const rankPrefixes = ['[PRO]', '[ELITE]', '[ALPHA]', '[CHAMPION]', '[UNREAL]', '[MASTER]'];
   const skinNameMap: Record<string, string> = {
     jonesy: 'Jonesy',
@@ -262,11 +358,14 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
     const name = `${rank} ${skinBase}#${tagNum}`;
     const poi = ISLAND_POIS[i % ISLAND_POIS.length];
     const wepPreset = botWeapons[i % botWeapons.length];
-    const team = teamList[i % teamList.length];
+    const team = enemyTeams[i % enemyTeams.length];
 
-    const x = poi.x + (Math.random() - 0.5) * 70;
-    const z = poi.z + (Math.random() - 0.5) * 70;
-    const y = 1.5;
+    // Spawn first 6 bots around Central Strike City & nearby roads so action is immediate, rest across all 10 POIs
+    const spread = i < 6 ? 45 : 65;
+    const basePoi = i < 6 ? { x: 0, z: 0 } : poi;
+    const x = basePoi.x + (Math.random() - 0.5) * spread * 2;
+    const z = basePoi.z + (Math.random() - 0.5) * spread * 2;
+    const y = engine.getGroundElevationAt(x, z, 60);
 
     const bot: BotPlayer = {
       id: `bot_${i}`,
@@ -282,16 +381,16 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
       vz: 0,
       rotY: Math.random() * Math.PI * 2,
       pitch: 0,
-      health: 80,
-      shield: 25,
+      health: 150,
+      shield: 50,
       isAlive: true,
       isGrounded: true,
       weapon: { ...wepPreset },
       targetPos: null,
-      state: 'wander',
+      state: i < 6 ? 'combat' : 'wander',
       lastShotTime: 0,
-      accuracy: 0.12,
-      reactionTimer: 2.5 + Math.random() * 2.0,
+      accuracy: Math.max(0.18, config.accuracy * 0.55),
+      reactionTimer: Math.max(0.45, config.reactionTimer * 2.2),
       kills: 0,
       lastBuildTime: 0,
     };
@@ -306,7 +405,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
       bot.name,
       true,
       bot.team,
-      bot.health / 100,
+      bot.health / 150,
       bot.shield / 50
     );
     rig.root.add(nameTag);

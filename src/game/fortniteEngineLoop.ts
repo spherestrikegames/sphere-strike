@@ -112,8 +112,10 @@ export function updateInteractionPromptsImpl(engine: FortniteEngine) {
   // Check near Upgrade Bench or Reset Pedestal
   let benchPrompt: string | null = null;
   if (engine.resetPedestalPos) {
-    const pDist = engine.playerPos.distanceTo(
-      new THREE.Vector3(engine.resetPedestalPos.x, engine.resetPedestalPos.y, engine.resetPedestalPos.z)
+    const pDist = Math.hypot(
+      engine.playerPos.x - engine.resetPedestalPos.x,
+      engine.playerPos.y - engine.resetPedestalPos.y,
+      engine.playerPos.z - engine.resetPedestalPos.z
     );
     if (pDist < 5.0) {
       benchPrompt = `[E] RESET 1V1 ARENA BUILDS`;
@@ -122,7 +124,11 @@ export function updateInteractionPromptsImpl(engine: FortniteEngine) {
 
   if (!benchPrompt) {
     for (const bench of engine.upgradeBenches) {
-      const bDist = engine.playerPos.distanceTo(new THREE.Vector3(bench.x, bench.y, bench.z));
+      const bDist = Math.hypot(
+        engine.playerPos.x - bench.x,
+        engine.playerPos.y - bench.y,
+        engine.playerPos.z - bench.z
+      );
       if (bDist < 5.0) {
         benchPrompt = `[E] USE UPGRADE BENCH (OR PRESS [B])`;
         break;

@@ -109,6 +109,7 @@ export interface EngineCallbacks {
   onItemCollected?: (item: PickupNotification) => void;
   onLocationChange?: (locationName: string) => void;
   onPlayerPositionUpdate?: (coords: { x: number; z: number; rotationY: number }) => void;
+  onBuildStateChange?: (isBuildMode: boolean, buildType: BuildType, material: MaterialType) => void;
 }
 
 interface ShellCasing {
@@ -551,7 +552,7 @@ export class FortniteEngine {
       profile.settings.fov || 75,
       canvas.clientWidth / canvas.clientHeight,
       0.1,
-      1000
+      1600
     );
 
     // Renderer (Optimized for silky smooth 60+ FPS across all devices)
@@ -667,13 +668,13 @@ export class FortniteEngine {
     // Setup Damage Numbers
     this.scene.add(this.damageNumberSprites);
 
-    // Spawn AI Bots (AI Knockout mode gets 24 bots, 1v1 Arena gets 1 opponent bot, Battle Royale gets 0)
-    if (this.mode === 'first_person_royale' || this.mode === 'free_for_all') {
+    // Spawn AI Bots for all combat modes (2v2 gets Duo Teammate + Enemy Duos, 1v1 gets Arena Rival, BR/FFA/Knockout gets 24 bots)
+    if (this.mode === 'first_person_royale' || this.mode === 'free_for_all' || this.mode === 'battle_royale') {
       this.spawnBots(24);
     } else if (this.mode === '1v1' || this.mode === '1v1_build_fight') {
       this.spawnBots(1);
     } else if (this.mode === '2v2') {
-      this.spawnBots(2);
+      this.spawnBots(3);
     } else {
       this.spawnBots(0);
     }

@@ -4,7 +4,14 @@ import { UpgradeBenchStation, createUpgradeBenchMesh } from './fortniteWorldAren
 import { addDetailedDrivableVehicle } from './fortniteWorldVehiclesProps';
 import { addChest, addHarvestable } from './fortniteWorldNature';
 import { SKYSCRAPER_LAUNCH_PADS } from './fortniteWorldTerrain';
-import { buildStrikeIslandWorld, getStrikeIslandElevation } from './fortniteWorldStrikeIsland';
+import {
+  buildStrikeIslandWorld,
+  getStrikeIslandElevation,
+  WaterQueryInfo,
+  RoadQueryInfo,
+} from './fortniteWorldStrikeIsland';
+
+export type { WaterQueryInfo, RoadQueryInfo };
 
 export interface MapMetadata {
   id: 0 | 1 | 2 | 3;
@@ -31,7 +38,7 @@ export const MAP_METADATA_LIST: MapMetadata[] = [
     description: 'Massive 840m island featuring Strike City, Dusty Desert, Pinewood Forest, Military Base, Coastal Village, Snowfall Mountain, Industrial Zone, Lost Temple, Racing Circuit & Underground Bunker.',
     skyColor: 0x38bdf8,
     fogColor: 0xbae6fd,
-    fogDensity: 0.0016, // lowered density so distant mountain peaks and highrises are visible across the 840m island
+    fogDensity: 0.0016,
     ambientColor: 0xffffff,
     sunColor: 0xffedd5,
     sunIntensity: 2.5,
@@ -93,6 +100,10 @@ export interface MapDataResult {
   upgradeBenches: UpgradeBenchStation[];
   spawnPoint: THREE.Vector3;
   getElevation: (x: number, z: number) => number;
+  getSurfaceType: (x: number, z: number) => 'grass' | 'wood' | 'stone' | 'metal' | 'sand' | 'snow' | 'water';
+  getWaterInfo: (x: number, z: number) => WaterQueryInfo;
+  getRoadInfo: (x: number, z: number) => RoadQueryInfo;
+  getBuildingFoundationHeight: (x: number, z: number) => number;
 }
 
 /**
@@ -570,6 +581,15 @@ export class MapManager {
       upgradeBenches,
       spawnPoint,
       getElevation,
+      getSurfaceType: (x, z) => (Math.abs(z) <= 6 || (Math.abs(x + 60) <= 5 && z < 0 && z > -120) ? 'stone' : 'grass'),
+      getWaterInfo: () => ({ isInWater: false, waterLevel: -999, depth: 0, type: 'none' }),
+      getRoadInfo: (x, z) => ({
+        isOnRoad: Math.abs(z) <= 6 && Math.abs(x) <= 140,
+        isNearRoad: Math.abs(z) <= 10 && Math.abs(x) <= 145,
+        roadElevation: 0.08,
+        roadId: 'pinecrest_avenue',
+      }),
+      getBuildingFoundationHeight: (x, z) => getElevation(x, z),
     };
   }
 
@@ -1180,6 +1200,15 @@ export class MapManager {
       upgradeBenches,
       spawnPoint,
       getElevation,
+      getSurfaceType: () => 'stone',
+      getWaterInfo: () => ({ isInWater: false, waterLevel: -999, depth: 0, type: 'none' }),
+      getRoadInfo: (x, z) => ({
+        isOnRoad: Math.abs(x) <= 9 || Math.abs(z) <= 9,
+        isNearRoad: Math.abs(x) <= 13 || Math.abs(z) <= 13,
+        roadElevation: 0.08,
+        roadId: 'apex_boulevard',
+      }),
+      getBuildingFoundationHeight: (x, z) => getElevation(x, z),
     };
   }
 
@@ -1625,6 +1654,15 @@ export class MapManager {
       upgradeBenches,
       spawnPoint,
       getElevation,
+      getSurfaceType: (x, z) => (Math.abs(z + 10) <= 4 ? 'stone' : 'grass'),
+      getWaterInfo: () => ({ isInWater: false, waterLevel: -999, depth: 0, type: 'none' }),
+      getRoadInfo: (x, z) => ({
+        isOnRoad: Math.abs(z + 10) <= 3.5 && Math.abs(x) <= 130,
+        isNearRoad: Math.abs(z + 10) <= 7.0 && Math.abs(x) <= 135,
+        roadElevation: getElevation(x, z) + 0.08,
+        roadId: 'harvest_farm_road',
+      }),
+      getBuildingFoundationHeight: (x, z) => getElevation(x, z),
     };
   }
 }

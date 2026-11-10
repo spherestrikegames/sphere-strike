@@ -3,6 +3,15 @@ import http from 'http';
 import path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
+import {
+  Authoritative2v2Room,
+  AuthoritativePlayer,
+  assignBalancedTeam,
+  validatePlayerTransform,
+  processAuthoritativeDamage,
+  validateBuildingPlacement,
+} from './src/game/matchmaking2v2Validator';
+import { TeamType } from './src/types';
 
 interface RoomEvent {
   id: number;
@@ -17,6 +26,11 @@ interface PartyPlayer {
   name: string;
   skinId: string;
   level: number;
+  team: TeamType;
+  health: number;
+  shield: number;
+  isAlive: boolean;
+  eliminations: number;
   isReady: boolean;
   ws?: WebSocket;
   lastPing: number;
@@ -25,6 +39,8 @@ interface PartyPlayer {
 
 interface PartyRoom {
   code: string;
+  mode: '2v2' | 'battle_royale' | 'custom';
+  maxPlayers: number;
   hostId: string;
   createdAt: number;
   players: Map<string, PartyPlayer>;
@@ -32,22 +48,42 @@ interface PartyRoom {
   seed: number;
   events: RoomEvent[];
   eventSeq: number;
+  authState: Authoritative2v2Room;
 }
 
 const rooms = new Map<string, PartyRoom>();
 
+function createRoomInstance(code: string, hostId: string, mode: '2v2' | 'battle_royale' | 'custom' = 'battle_royale', maxPlayers: number = 16): PartyRoom {
+  const seed = Math.floor(Math.random() * 1000000);
+  return {
+    code,
+    mode,
+    maxPlayers,
+    hostId,
+    createdAt: Date.now(),
+    players: new Map(),
+    gameState: 'lobby',
+    seed,
+    events: [],
+    eventSeq: 0,
+    authState: {
+      code,
+      mode,
+      maxPlayers,
+      hostId,
+      gameState: 'lobby',
+      seed,
+      countdownSeconds: 3,
+      winningTeam: null,
+      players: new Map<string, AuthoritativePlayer>(),
+      builds: new Map(),
+    },
+  };
+}
+
 function ensureGlobalRoom() {
   if (!rooms.has('ROYALE-GLOBAL')) {
-    rooms.set('ROYALE-GLOBAL', {
-      code: 'ROYALE-GLOBAL',
-      hostId: 'global_host',
-      createdAt: Date.now(),
-      players: new Map(),
-      gameState: 'lobby',
-      seed: 777123,
-      events: [],
-      eventSeq: 0,
-    });
+    rooms.set('ROYALE-GLOBAL', createRoomInstance('ROYALE-GLOBAL', 'global_host', 'battle_royale', 16));
   }
 }
 ensureGlobalRoom();
@@ -56,6 +92,8 @@ function getPartyPayload(room: PartyRoom) {
   return {
     type: 'party:update',
     code: room.code,
+    mode: room.mode,
+    maxPlayers: room.maxPlayers,
     hostId: room.hostId,
     gameState: room.gameState,
     seed: room.seed,
@@ -64,6 +102,11 @@ function getPartyPayload(room: PartyRoom) {
       name: p.name,
       skinId: p.skinId,
       level: p.level,
+      team: p.team,
+      health: p.health,
+      shield: p.shield,
+      isAlive: p.isAlive,
+      eliminations: p.eliminations,
       isReady: p.isReady,
       isHost: p.id === room.hostId,
       transform: p.transform,
@@ -158,19 +201,76 @@ async function startServer() {
     const upperCode = req.params.code.toUpperCase();
     let room = rooms.get(upperCode);
     if (!room) {
-      room = {
-        code: upperCode,
-        hostId: 'host',
-        createdAt: Date.now(),
-        players: new Map(),
-        gameState: 'lobby',
-        seed: Math.floor(Math.random() * 1000000),
-        events: [],
-        eventSeq: 0,
-      };
+      room = createRoomInstance(upperCode, 'host');
       rooms.set(upperCode, room);
     }
     res.json(getPartyPayload(room));
+  });
+
+  // Dedicated 4-Player 2v2 Matchmaking Queue Endpoint (2 Teams of 2: ALPHA vs OMEGA)
+  app.post('/api/matchmaking/2v2', (req, res) => {
+    const { player } = req.body || {};
+    const playerId = player?.id || `p_${Date.now()}`;
+
+    // Find an open 2v2 room with < 4 players in lobby state
+    let targetRoom: PartyRoom | undefined;
+    for (const r of rooms.values()) {
+      if (r.mode === '2v2' && r.players.size < 4 && r.gameState === 'lobby') {
+        targetRoom = r;
+        break;
+      }
+    }
+
+    if (!targetRoom) {
+      const code = `2V2-${Math.floor(1000 + Math.random() * 9000)}`;
+      targetRoom = createRoomInstance(code, playerId, '2v2', 4);
+      rooms.set(code, targetRoom);
+    }
+
+    const assignedTeam = assignBalancedTeam(targetRoom.authState, player?.team);
+    const partyPlayer: PartyPlayer = {
+      id: playerId,
+      name: player?.name || 'Player',
+      skinId: player?.skinId || 'jonesy',
+      level: player?.level || 1,
+      team: assignedTeam,
+      health: 250,
+      shield: 100,
+      isAlive: true,
+      eliminations: 0,
+      isReady: true,
+      lastPing: Date.now(),
+    };
+
+    targetRoom.players.set(playerId, partyPlayer);
+    targetRoom.authState.players.set(playerId, {
+      id: playerId,
+      name: partyPlayer.name,
+      skinId: partyPlayer.skinId,
+      level: partyPlayer.level,
+      team: assignedTeam,
+      isReady: true,
+      health: 250,
+      shield: 100,
+      isAlive: true,
+      eliminations: 0,
+      x: assignedTeam === 'ALPHA' ? -24 : 24,
+      y: 1,
+      z: 0,
+      rotY: 0,
+      lastUpdateMs: Date.now(),
+    });
+
+    publishRoomEvent(targetRoom, 'party:update', getPartyPayload(targetRoom));
+
+    res.json({
+      success: true,
+      code: targetRoom.code,
+      team: assignedTeam,
+      seed: targetRoom.seed,
+      playerId,
+      room: getPartyPayload(targetRoom),
+    });
   });
 
   // HTTP Join or Create Party
@@ -181,19 +281,11 @@ async function startServer() {
       upperCode = 'ROYALE-' + Math.floor(1000 + Math.random() * 9000).toString();
     }
     const playerId = player?.id || `p_${Date.now()}`;
+    const is2v2Code = upperCode.startsWith('2V2-') || upperCode.includes('2V2');
 
     let room = rooms.get(upperCode);
     if (!room) {
-      room = {
-        code: upperCode,
-        hostId: playerId,
-        createdAt: Date.now(),
-        players: new Map(),
-        gameState: 'lobby',
-        seed: Math.floor(Math.random() * 1000000),
-        events: [],
-        eventSeq: 0,
-      };
+      room = createRoomInstance(upperCode, playerId, is2v2Code ? '2v2' : 'battle_royale', is2v2Code ? 4 : 16);
       rooms.set(upperCode, room);
     }
 
@@ -201,21 +293,45 @@ async function startServer() {
       room.hostId = playerId;
     }
 
+    const assignedTeam = room.players.get(playerId)?.team || assignBalancedTeam(room.authState, player?.team);
     const partyPlayer: PartyPlayer = {
       id: playerId,
       name: player?.name || 'Player',
       skinId: player?.skinId || 'jonesy',
       level: player?.level || 1,
+      team: assignedTeam,
+      health: 250,
+      shield: 100,
+      isAlive: true,
+      eliminations: 0,
       isReady: true,
       lastPing: Date.now(),
     };
 
     room.players.set(playerId, partyPlayer);
+    room.authState.players.set(playerId, {
+      id: playerId,
+      name: partyPlayer.name,
+      skinId: partyPlayer.skinId,
+      level: partyPlayer.level,
+      team: assignedTeam,
+      isReady: true,
+      health: 250,
+      shield: 100,
+      isAlive: true,
+      eliminations: 0,
+      x: 0,
+      y: 1,
+      z: 0,
+      rotY: 0,
+      lastUpdateMs: Date.now(),
+    });
     publishRoomEvent(room, 'party:update', getPartyPayload(room));
 
     res.json({
       success: true,
       code: room.code,
+      team: assignedTeam,
       seed: room.seed,
       playerId,
       room: getPartyPayload(room),
@@ -230,16 +346,7 @@ async function startServer() {
     const upperCode = code.toUpperCase();
     let room = rooms.get(upperCode);
     if (!room) {
-      room = {
-        code: upperCode,
-        hostId: playerId || `p_${Date.now()}`,
-        createdAt: Date.now(),
-        players: new Map(),
-        gameState: 'lobby',
-        seed: Math.floor(Math.random() * 1000000),
-        events: [],
-        eventSeq: 0,
-      };
+      room = createRoomInstance(upperCode, playerId || `p_${Date.now()}`);
       rooms.set(upperCode, room);
     }
 
@@ -247,9 +354,11 @@ async function startServer() {
       const p = room.players.get(playerId)!;
       p.lastPing = Date.now();
       if (transform) {
-        p.transform = transform;
-        // broadcast transform to ws players
-        broadcastToRoom(room, { type: 'player:sync', playerId, data: transform });
+        const checked = validatePlayerTransform(transform);
+        if (checked.valid) {
+          p.transform = { ...transform, x: checked.x, y: checked.y, z: checked.z, rotY: checked.rotY };
+          broadcastToRoom(room, { type: 'player:sync', playerId, data: p.transform });
+        }
       }
     }
 
@@ -263,24 +372,39 @@ async function startServer() {
     });
   });
 
-  // HTTP Action endpoint (shoot, damage, elim, chat)
+  // HTTP Action endpoint (shoot, damage, elim, build, chat) with authoritative server validation
   app.post('/api/parties/action', (req, res) => {
     const { code, playerId, action } = req.body || {};
     if (!code || !action) return res.status(400).json({ error: 'Missing code or action' });
     const upperCode = code.toUpperCase();
     let room = rooms.get(upperCode);
     if (!room) {
-      room = {
-        code: upperCode,
-        hostId: playerId || `p_${Date.now()}`,
-        createdAt: Date.now(),
-        players: new Map(),
-        gameState: 'lobby',
-        seed: Math.floor(Math.random() * 1000000),
-        events: [],
-        eventSeq: 0,
-      };
+      room = createRoomInstance(upperCode, playerId || `p_${Date.now()}`);
       rooms.set(upperCode, room);
+    }
+
+    if (action.type === 'damage' && playerId && action.targetId) {
+      const dmgRes = processAuthoritativeDamage(
+        room.authState,
+        playerId,
+        action.targetId,
+        action.damage,
+        action.isHeadshot,
+        action.weaponName
+      );
+      if (!dmgRes.accepted) {
+        return res.json({ success: false, reason: dmgRes.reason });
+      }
+      action.damage = dmgRes.appliedDamage;
+      action.targetHealth = dmgRes.targetHealth;
+      action.targetShield = dmgRes.targetShield;
+      action.eliminated = dmgRes.eliminated;
+      action.winningTeam = dmgRes.winningTeam;
+    } else if (action.type === 'build' && playerId && action.piece) {
+      const buildRes = validateBuildingPlacement(room.authState, playerId, action.piece);
+      if (!buildRes.accepted) {
+        return res.json({ success: false, reason: buildRes.reason });
+      }
     }
 
     const evt = publishRoomEvent(room, 'player:action', { action }, playerId);
@@ -294,20 +418,12 @@ async function startServer() {
     const upperCode = code.toUpperCase();
     let room = rooms.get(upperCode);
     if (!room) {
-      room = {
-        code: upperCode,
-        hostId: 'host',
-        createdAt: Date.now(),
-        players: new Map(),
-        gameState: 'lobby',
-        seed: Math.floor(Math.random() * 1000000),
-        events: [],
-        eventSeq: 0,
-      };
+      room = createRoomInstance(upperCode, 'host');
       rooms.set(upperCode, room);
     }
 
     room.gameState = 'playing';
+    room.authState.gameState = 'playing';
     if (!room.seed) room.seed = Math.floor(Math.random() * 1000000);
 
     publishRoomEvent(room, 'match:start', { seed: room.seed, roomCode: room.code });
@@ -321,6 +437,7 @@ async function startServer() {
     const room = rooms.get(code.toUpperCase());
     if (room) {
       room.players.delete(playerId);
+      room.authState.players.delete(playerId);
       publishRoomEvent(room, 'player:leave', { playerId });
       if (room.hostId === playerId && room.players.size > 0) {
         const nextHost = room.players.keys().next().value;
@@ -366,19 +483,11 @@ async function startServer() {
               upperCode = 'ROYALE-' + Math.floor(1000 + Math.random() * 9000).toString();
             }
             const playerId = msg.player?.id || `p_${Date.now()}`;
+            const is2v2Code = upperCode.startsWith('2V2-') || upperCode.includes('2V2');
 
             let room = rooms.get(upperCode);
             if (!room) {
-              room = {
-                code: upperCode,
-                hostId: playerId,
-                createdAt: Date.now(),
-                players: new Map(),
-                gameState: 'lobby',
-                seed: Math.floor(Math.random() * 1000000),
-                events: [],
-                eventSeq: 0,
-              };
+              room = createRoomInstance(upperCode, playerId, is2v2Code ? '2v2' : 'battle_royale', is2v2Code ? 4 : 16);
               rooms.set(upperCode, room);
             }
 
@@ -387,17 +496,40 @@ async function startServer() {
               room.hostId = playerId;
             }
 
+            const assignedTeam = room.players.get(playerId)?.team || assignBalancedTeam(room.authState, msg.player?.team);
             const player: PartyPlayer = {
               id: playerId,
               name: msg.player?.name || 'Player',
               skinId: msg.player?.skinId || 'jonesy',
               level: msg.player?.level || 1,
+              team: assignedTeam,
+              health: 250,
+              shield: 100,
+              isAlive: true,
+              eliminations: 0,
               isReady: true,
               ws,
               lastPing: Date.now(),
             };
 
             room.players.set(playerId, player);
+            room.authState.players.set(playerId, {
+              id: playerId,
+              name: player.name,
+              skinId: player.skinId,
+              level: player.level,
+              team: assignedTeam,
+              isReady: true,
+              health: 250,
+              shield: 100,
+              isAlive: true,
+              eliminations: 0,
+              x: 0,
+              y: 1,
+              z: 0,
+              rotY: 0,
+              lastUpdateMs: Date.now(),
+            });
             currentRoomCode = upperCode;
             currentPlayerId = playerId;
 
@@ -407,6 +539,7 @@ async function startServer() {
                 type: 'party:joined',
                 room: getPartyPayload(room),
                 playerId,
+                team: assignedTeam,
                 seed: room.seed,
               })
             );
@@ -474,10 +607,22 @@ async function startServer() {
             const room = rooms.get(currentRoomCode);
             if (!room) return;
 
+            const checked = validatePlayerTransform(msg.data);
+            if (!checked.valid) return;
+
+            const sanitizedData = { ...msg.data, x: checked.x, y: checked.y, z: checked.z, rotY: checked.rotY };
             const player = room.players.get(currentPlayerId);
             if (player) {
               player.lastPing = Date.now();
-              player.transform = msg.data;
+              player.transform = sanitizedData;
+            }
+            const authP = room.authState.players.get(currentPlayerId);
+            if (authP) {
+              authP.x = checked.x;
+              authP.y = checked.y;
+              authP.z = checked.z;
+              authP.rotY = checked.rotY;
+              authP.lastUpdateMs = Date.now();
             }
 
             broadcastToRoom(
@@ -486,7 +631,7 @@ async function startServer() {
                 type: 'player:sync',
                 playerId: currentPlayerId,
                 senderId: currentPlayerId,
-                data: msg.data,
+                data: sanitizedData,
               },
               ws
             );
@@ -496,12 +641,33 @@ async function startServer() {
           case 'player:action': {
             if (!currentRoomCode || !currentPlayerId) return;
             const room = rooms.get(currentRoomCode);
-            if (!room) return;
+            if (!room || !msg.action) return;
+
+            const action = msg.action;
+            if (action.type === 'damage' && action.targetId) {
+              const dmgRes = processAuthoritativeDamage(
+                room.authState,
+                currentPlayerId,
+                action.targetId,
+                action.damage,
+                action.isHeadshot,
+                action.weaponName
+              );
+              if (!dmgRes.accepted) return;
+              action.damage = dmgRes.appliedDamage;
+              action.targetHealth = dmgRes.targetHealth;
+              action.targetShield = dmgRes.targetShield;
+              action.eliminated = dmgRes.eliminated;
+              action.winningTeam = dmgRes.winningTeam;
+            } else if (action.type === 'build' && action.piece) {
+              const buildRes = validateBuildingPlacement(room.authState, currentPlayerId, action.piece);
+              if (!buildRes.accepted) return;
+            }
 
             publishRoomEvent(
               room,
               'player:action',
-              { action: msg.action },
+              { action },
               currentPlayerId,
               ws
             );
@@ -531,6 +697,7 @@ async function startServer() {
         const room = rooms.get(currentRoomCode);
         if (room) {
           room.players.delete(currentPlayerId);
+          room.authState.players.delete(currentPlayerId);
           publishRoomEvent(room, 'player:leave', { playerId: currentPlayerId, senderId: currentPlayerId });
           if (room.players.size === 0 && currentRoomCode !== 'ROYALE-GLOBAL') {
             rooms.delete(currentRoomCode);

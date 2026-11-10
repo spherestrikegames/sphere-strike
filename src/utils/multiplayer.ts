@@ -21,6 +21,22 @@ function generateInitialCode(): string {
   return `ROYALE-${rand}`;
 }
 
+function resolveHttpUrl(path: string): string {
+  const base = ((import.meta as any).env?.VITE_BACKEND_HTTP_URL || '').trim().replace(/\/+$/, '');
+  return base ? `${base}${path}` : path;
+}
+
+function resolveWsUrl(): string {
+  const customWs = ((import.meta as any).env?.VITE_BACKEND_WS_URL || '').trim();
+  if (customWs) return customWs;
+  const customHttp = ((import.meta as any).env?.VITE_BACKEND_HTTP_URL || '').trim().replace(/\/+$/, '');
+  if (customHttp) {
+    return customHttp.replace(/^http/, 'ws') + '/ws';
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws`;
+}
+
 export class MultiplayerClient {
   private ws: WebSocket | null = null;
   private handlers: MultiplayerEventHandler = {};
@@ -61,7 +77,7 @@ export class MultiplayerClient {
           isHost: true,
         },
       ],
-      isConnected: true,
+      isConnected: false, // Truthful initial connection state: turns true only when server responds
       error: null,
     };
 
@@ -92,7 +108,7 @@ export class MultiplayerClient {
       this.handlers.onPartyUpdate(this.partyState);
     }
     if (this.handlers.onConnectionChange) {
-      this.handlers.onConnectionChange(true);
+      this.handlers.onConnectionChange(this.partyState.isConnected);
     }
     if (this.handlers.onPingUpdate) {
       this.handlers.onPingUpdate(this.pingMs);
@@ -124,7 +140,7 @@ export class MultiplayerClient {
 
   public async fetchPublicRooms(): Promise<Array<{ code: string; playerCount: number; gameState: string; isGlobal?: boolean }>> {
     try {
-      const res = await fetch('/api/parties/public', { cache: 'no-store' });
+      const res = await fetch(resolveHttpUrl('/api/parties/public'), { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         return Array.isArray(data.rooms) ? data.rooms : [];
@@ -139,22 +155,22 @@ export class MultiplayerClient {
    * Connects to online matchmaking via HTTP & WebSocket
    */
   public async connect(): Promise<boolean> {
-    this.partyState.isConnected = true;
     this.partyState.error = null;
-
-    if (this.handlers.onConnectionChange) {
-      this.handlers.onConnectionChange(true);
-    }
 
     // Background probe HTTP API
     try {
-      const res = await fetch('/api/health', { method: 'GET', cache: 'no-store' });
+      const res = await fetch(resolveHttpUrl('/api/health'), { method: 'GET', cache: 'no-store' });
       if (res.ok) {
         this.partyState.isConnected = true;
         this.handlers.onConnectionChange?.(true);
+      } else {
+        this.partyState.isConnected = false;
+        this.handlers.onConnectionChange?.(false);
       }
     } catch {
       this.transport = 'mesh';
+      this.partyState.isConnected = false;
+      this.handlers.onConnectionChange?.(false);
     }
 
     // Background WebSocket attempt
@@ -167,7 +183,7 @@ export class MultiplayerClient {
       this.registerRoomWithServer(this.partyState.code);
     }
 
-    return true;
+    return this.partyState.isConnected;
   }
 
   private scheduleReconnect() {
@@ -206,9 +222,7 @@ export class MultiplayerClient {
     }
 
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.host;
-      const wsUrl = `${protocol}//${host}/ws`;
+      const wsUrl = resolveWsUrl();
 
       const socket = new WebSocket(wsUrl);
 
@@ -298,7 +312,7 @@ export class MultiplayerClient {
         this.pendingSyncData = null;
       }
 
-      const res = await fetch('/api/parties/poll', {
+      const res = await fetch(resolveHttpUrl('/api/parties/poll'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -306,6 +320,7 @@ export class MultiplayerClient {
 
       if (!res.ok) return;
 
+      this.partyState.isConnected = true;
       const data = await res.json();
       if (data.room) {
         this.updatePartyFromPayload(data.room);
@@ -331,7 +346,7 @@ export class MultiplayerClient {
 
   private async registerRoomWithServer(code: string) {
     try {
-      const res = await fetch('/api/parties/join', {
+      const res = await fetch(resolveHttpUrl('/api/parties/join'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -341,6 +356,8 @@ export class MultiplayerClient {
       });
 
       if (res.ok) {
+        this.partyState.isConnected = true;
+        this.handlers.onConnectionChange?.(true);
         const data = await res.json();
         if (data.room) {
           this.updatePartyFromPayload(data.room);
@@ -583,6 +600,30 @@ export class MultiplayerClient {
     }
   }
 
+  public async join2v2Matchmaking(playerInfo: { name: string; skinId: string; level: number }) {
+    this.activePlayerInfo = { ...playerInfo };
+    try {
+      const res = await fetch(resolveHttpUrl('/api/matchmaking/2v2'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player: { id: this.myPlayerId, ...playerInfo },
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.code) {
+          await this.connectWithCode(data.code, playerInfo);
+          return data;
+        }
+      }
+    } catch {
+      // Fallback to 2v2 room code
+    }
+    await this.connectWithCode('ROYALE-2V2A', playerInfo);
+    return null;
+  }
+
   public startPartyMatch(mode?: string, map?: string) {
     const seed = Math.floor(Math.random() * 1000000);
 
@@ -603,7 +644,7 @@ export class MultiplayerClient {
 
     // Notify HTTP backend
     if (this.partyState.code) {
-      fetch('/api/parties/start', {
+      fetch(resolveHttpUrl('/api/parties/start'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: this.partyState.code, playerId: this.myPlayerId, mode, map }),
@@ -643,7 +684,7 @@ export class MultiplayerClient {
     }
 
     if (this.partyState.code) {
-      fetch('/api/parties/action', {
+      fetch(resolveHttpUrl('/api/parties/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -137,12 +137,26 @@ export function executeBotCombatAI(
   dx: number,
   dz: number
 ) {
-  bot.rotY = Math.atan2(-dx, -dz) + Math.sin(time * 3) * 0.15;
-  const strafe = Math.sin(time * 1.5 + parseInt(bot.id.replace('bot_', ''))) * 2.5;
-  bot.vx = Math.cos(bot.rotY) * strafe;
-  bot.vz = -Math.sin(bot.rotY) * strafe;
+  bot.rotY = Math.atan2(-dx, -dz) + Math.sin(time * 3) * 0.12;
+  const strafe = Math.sin(time * 1.8 + (bot.id.charCodeAt(bot.id.length - 1) || 1)) * 3.8;
+  const fwdX = -Math.sin(bot.rotY);
+  const fwdZ = -Math.cos(bot.rotY);
+  const rightX = Math.cos(bot.rotY);
+  const rightZ = -Math.sin(bot.rotY);
 
-  if (time - bot.lastShotTime > bot.reactionTimer) {
+  const approachSpeed = distToPlayer > 22 ? 5.2 : distToPlayer < 8 ? -3.0 : 0.8;
+  bot.vx = fwdX * approachSpeed + rightX * strafe;
+  bot.vz = fwdZ * approachSpeed + rightZ * strafe;
+
+  // Tactical 2v2.io / Fortnite defensive cover building when engaging at medium-close range
+  if (distToPlayer < 36 && distToPlayer > 7 && time - (bot.lastBuildTime || 0) > 7.5) {
+    bot.lastBuildTime = time;
+    if (Math.random() < 0.45) {
+      engine.placeBotPiece(bot, Math.random() < 0.7 ? 'wall' : 'ramp', 'wood');
+    }
+  }
+
+  if (time - bot.lastShotTime > bot.reactionTimer && !engine.isSkydiving) {
     bot.lastShotTime = time;
 
     _scratchBotPos.set(bot.x, bot.y + 1.2, bot.z);
@@ -151,7 +165,7 @@ export function executeBotCombatAI(
 
     if (!isBlocked) {
       if (Math.random() < bot.accuracy) {
-        const dmg = 4 + Math.floor(Math.random() * 4);
+        const dmg = 6 + Math.floor(Math.random() * 6);
         if (engine.shield > 0) {
           engine.shield = Math.max(0, engine.shield - dmg);
         } else {
@@ -168,7 +182,7 @@ export function executeBotCombatAI(
       }
     }
 
-    if (distToPlayer < 60) {
+    if (distToPlayer < 75) {
       fortniteAudio.playGunshotAR(false);
       if (distToPlayer < 35) {
         fortniteAudio.playBulletCrack();
@@ -177,9 +191,9 @@ export function executeBotCombatAI(
         _scratchTracerEnd.set(_scratchBotPos.x + dx * 0.4, _scratchBotPos.y + 0.5, _scratchBotPos.z + dz * 0.4);
       } else {
         _scratchTracerEnd.set(
-          engine.playerPos.x + (Math.random() - 0.5) * 4,
-          engine.playerPos.y + 1.4,
-          engine.playerPos.z + (Math.random() - 0.5) * 4
+          engine.playerPos.x + (Math.random() - 0.5) * 3.2,
+          engine.playerPos.y + 1.3,
+          engine.playerPos.z + (Math.random() - 0.5) * 3.2
         );
       }
       engine.createBulletTracer(_scratchBotPos, _scratchTracerEnd);
@@ -190,8 +204,8 @@ export function executeBotCombatAI(
 export function updateBotsImpl(engine: FortniteEngine, dt: number) {
   const time = performance.now() * 0.001;
 
-  // In 1v1 Arena Mode, execute specialized Pro Builder God AI
-  if (engine.mode === '1v1_build_fight') {
+  // In 1v1 Arena Mode ('1v1' or '1v1_build_fight'), execute specialized Arena Rival AI
+  if (engine.mode === '1v1' || engine.mode === '1v1_build_fight') {
     for (let i = 0; i < engine.bots.length; i++) {
       const bot = engine.bots[i];
       if (bot.isAlive) {
@@ -201,48 +215,49 @@ export function updateBotsImpl(engine: FortniteEngine, dt: number) {
     return;
   }
 
-  // In Battle Royale mode, no bots exist or run
-  if (engine.mode === 'battle_royale' || engine.bots.length === 0) {
+  if (engine.bots.length === 0) {
     return;
   }
 
-  // Simulated Bot vs Bot Skirmishes across the island
-  engine.botSimCombatTimer -= dt;
-  if (engine.botSimCombatTimer <= 0) {
-    engine.botSimCombatTimer = 9.0 + Math.random() * 10.0;
-    const aliveEnemyBots = engine.bots.filter((b) => b.isAlive && b.team !== engine.playerTeam);
-    if (aliveEnemyBots.length > 2) {
-      const victim = aliveEnemyBots[Math.floor(Math.random() * aliveEnemyBots.length)];
-      const killers = aliveEnemyBots.filter((b) => b.id !== victim.id);
-      const killer = killers[Math.floor(Math.random() * killers.length)] || { name: 'Squad Bot' };
+  // Simulated Bot vs Bot Skirmishes across the island (for large BR / FFA / Knockout modes)
+  if (engine.mode !== '2v2') {
+    engine.botSimCombatTimer -= dt;
+    if (engine.botSimCombatTimer <= 0) {
+      engine.botSimCombatTimer = 9.0 + Math.random() * 10.0;
+      const aliveEnemyBots = engine.bots.filter((b) => b.isAlive && b.team !== engine.playerTeam);
+      if (aliveEnemyBots.length > 2) {
+        const victim = aliveEnemyBots[Math.floor(Math.random() * aliveEnemyBots.length)];
+        const killers = aliveEnemyBots.filter((b) => b.id !== victim.id);
+        const killer = killers[Math.floor(Math.random() * killers.length)] || { name: 'Squad Bot' };
 
-      victim.isAlive = false;
-      const rig = engine.botMeshes.get(victim.id);
-      if (rig) {
-        engine.scene.remove(rig.root);
+        victim.isAlive = false;
+        const rig = engine.botMeshes.get(victim.id);
+        if (rig) {
+          engine.scene.remove(rig.root);
+        }
+        const nTag = engine.botNameTags.get(victim.id);
+        if (nTag) {
+          engine.scene.remove(nTag);
+        }
+
+        const botWeapons = ['SCAR AR', 'Pump Shotgun', 'Bolt-Action Sniper', 'Compact SMG', 'Tactical AR'];
+        const wep = botWeapons[Math.floor(Math.random() * botWeapons.length)];
+        const isHeadshot = Math.random() < 0.28;
+
+        const log: EliminationLog = {
+          id: `bot_elim_${Date.now()}_${Math.random()}`,
+          killer: killer.name,
+          victim: victim.name,
+          weaponName: wep,
+          isHeadshot,
+          time: Date.now(),
+        };
+        engine.callbacks.onElimination(log);
+
+        const remaining = engine.bots.filter((b) => b.isAlive).length + 1;
+        engine.callbacks.onPlayersLeftChange(remaining);
+        engine.checkTeamVictoryCondition();
       }
-      const nTag = engine.botNameTags.get(victim.id);
-      if (nTag) {
-        engine.scene.remove(nTag);
-      }
-
-      const botWeapons = ['SCAR AR', 'Pump Shotgun', 'Bolt-Action Sniper', 'Compact SMG', 'Tactical AR'];
-      const wep = botWeapons[Math.floor(Math.random() * botWeapons.length)];
-      const isHeadshot = Math.random() < 0.28;
-
-      const log: EliminationLog = {
-        id: `bot_elim_${Date.now()}_${Math.random()}`,
-        killer: killer.name,
-        victim: victim.name,
-        weaponName: wep,
-        isHeadshot,
-        time: Date.now(),
-      };
-      engine.callbacks.onElimination(log);
-
-      const remaining = engine.bots.filter((b) => b.isAlive).length + 1;
-      engine.callbacks.onPlayersLeftChange(remaining);
-      engine.checkTeamVictoryCondition();
     }
   }
 
@@ -259,31 +274,81 @@ export function updateBotsImpl(engine: FortniteEngine, dt: number) {
       continue;
     }
 
-    // 2. Friendly bot on Alpha team follows player and defends
+    // 2. Friendly bot on ALPHA team (e.g., 2v2 Duo Partner) follows player AND engages OMEGA enemies
     const isFriendly = bot.team === engine.playerTeam;
 
     if (isFriendly) {
-      if (distToPlayer > 8.0) {
+      let closestEnemy: BotPlayer | null = null;
+      let closestEnemyDist = Infinity;
+      for (let j = 0; j < engine.bots.length; j++) {
+        const candidate = engine.bots[j];
+        if (!candidate.isAlive || candidate.team === engine.playerTeam) continue;
+        const d = Math.hypot(candidate.x - bot.x, candidate.z - bot.z);
+        if (d < closestEnemyDist) {
+          closestEnemyDist = d;
+          closestEnemy = candidate;
+        }
+      }
+
+      if (distToPlayer > 11.0) {
         bot.rotY = Math.atan2(-dx, -dz);
-        bot.vx = -Math.sin(bot.rotY) * 6.5;
-        bot.vz = -Math.cos(bot.rotY) * 6.5;
+        bot.vx = -Math.sin(bot.rotY) * 7.2;
+        bot.vz = -Math.cos(bot.rotY) * 7.2;
+      } else if (closestEnemy && closestEnemyDist < 85) {
+        const edx = closestEnemy.x - bot.x;
+        const edz = closestEnemy.z - bot.z;
+        bot.rotY = Math.atan2(-edx, -edz);
+        const strafe = Math.sin(time * 2.4) * 3.5;
+        bot.vx = Math.cos(bot.rotY) * strafe;
+        bot.vz = -Math.sin(bot.rotY) * strafe;
+
+        if (time - bot.lastShotTime > 0.65) {
+          bot.lastShotTime = time;
+          _scratchBotPos.set(bot.x, bot.y + 1.2, bot.z);
+          _scratchTracerEnd.set(closestEnemy.x, closestEnemy.y + 1.2, closestEnemy.z);
+          engine.createBulletTracer(_scratchBotPos, _scratchTracerEnd);
+          fortniteAudio.playGunshotAR(false);
+
+          if (Math.random() < 0.45) {
+            const allyDmg = 18;
+            if (closestEnemy.shield > 0) {
+              closestEnemy.shield = Math.max(0, closestEnemy.shield - allyDmg);
+            } else {
+              closestEnemy.health = Math.max(0, closestEnemy.health - allyDmg);
+            }
+            const enemyTag = engine.botNameTags.get(closestEnemy.id);
+            if (enemyTag) {
+              updateNameTagSprite(
+                enemyTag,
+                closestEnemy.name,
+                true,
+                closestEnemy.team,
+                Math.max(0, closestEnemy.health / 250),
+                Math.max(0, closestEnemy.shield / 100)
+              );
+            }
+            if (closestEnemy.health <= 0) {
+              engine.eliminateBot(closestEnemy, false, 'SCAR AR (Duo Assist)');
+            }
+          }
+        }
       } else {
         bot.vx = 0;
         bot.vz = 0;
         bot.rotY = Math.atan2(-dx, -dz);
       }
     } else {
-      if (distToPlayer < 45) {
+      if (distToPlayer < 75 || engine.mode === '2v2') {
         bot.state = 'combat';
       }
 
       if (bot.state === 'combat') {
         executeBotCombatAI(bot, engine, time, distToPlayer, dx, dz);
       } else {
-        const angle = time * 0.2 + parseInt(bot.id.replace('bot_', ''));
+        const angle = time * 0.25 + i * 1.1;
         bot.rotY = angle;
-        bot.vx = -Math.sin(angle) * 3.0;
-        bot.vz = -Math.cos(angle) * 3.0;
+        bot.vx = -Math.sin(angle) * 3.8;
+        bot.vz = -Math.cos(angle) * 3.8;
       }
     }
 
@@ -301,7 +366,7 @@ export function updateBotsImpl(engine: FortniteEngine, dt: number) {
       rig.root.position.set(bot.x, bot.y, bot.z);
       rig.root.rotation.y = bot.rotY + Math.PI;
       // Throttle distant animation matrix calculations
-      if (distToPlayer < 90 || bot.state === 'combat') {
+      if (distToPlayer < 110 || bot.state === 'combat') {
         rig.updateAnimation(time, Math.hypot(bot.vx, bot.vz) > 0.5, false, bot.state === 'combat');
       }
     }
