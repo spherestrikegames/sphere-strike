@@ -224,6 +224,10 @@ test('6. Authoritative 4-Player 2v2 Matchmaking, Friendly-Fire Protection & Team
   const invalidHit = processAuthoritativeDamage(room, alphaPlayers[0].id, omegaPlayers[0].id, Number.NaN);
   assert.strictEqual(invalidHit.accepted, false);
   assert.strictEqual(invalidHit.reason, 'invalid_damage');
+  const lobbyRoom: Authoritative2v2Room = { ...room, gameState: 'lobby' };
+  const lobbyHit = processAuthoritativeDamage(lobbyRoom, alphaPlayers[0].id, omegaPlayers[0].id, 50);
+  assert.strictEqual(lobbyHit.accepted, false);
+  assert.strictEqual(lobbyHit.reason, 'match_not_playing');
 
   // Verify Enemy Damage & Anti-Cheat Damage Clamping (9999 -> 250 max)
   const hit1 = processAuthoritativeDamage(room, alphaPlayers[0].id, omegaPlayers[0].id, 9999, true, 'Sniper');
