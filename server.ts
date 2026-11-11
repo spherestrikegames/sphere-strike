@@ -212,12 +212,16 @@ async function startServer() {
     const { player } = req.body || {};
     const playerId = player?.id || `p_${Date.now()}`;
 
-    // Find an open 2v2 room with < 4 players in lobby state
-    let targetRoom: PartyRoom | undefined;
-    for (const r of rooms.values()) {
-      if (r.mode === '2v2' && r.players.size < 4 && r.gameState === 'lobby') {
-        targetRoom = r;
-        break;
+    // Reuse this player's current queue room before looking for a new open room.
+    let targetRoom: PartyRoom | undefined = Array.from(rooms.values()).find(
+      (r) => r.mode === '2v2' && r.gameState === 'lobby' && r.players.has(playerId)
+    );
+    if (!targetRoom) {
+      for (const r of rooms.values()) {
+        if (r.mode === '2v2' && r.players.size < 4 && r.gameState === 'lobby') {
+          targetRoom = r;
+          break;
+        }
       }
     }
 
