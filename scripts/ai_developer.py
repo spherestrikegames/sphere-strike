@@ -12,7 +12,20 @@ if not TOKEN:
 if REPO != "spherestrikegames/sphere-strike":
     raise SystemExit("Unexpected repository; refusing to run.")
 
+def write_summary(status, title, details):
+    """Write a durable per-run result to the GitHub Actions job summary."""
+    message = str(details).strip() or "No additional details were provided."
+    print(f"RESULT: {status} — {title}")
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a", encoding="utf-8") as summary:
+            summary.write(f"## Sphere Strike AI Developer: {title}\\n\\n")
+            summary.write(f"**Result:** {status}\\n\\n")
+            summary.write(message[:6000] + "\\n")
+
+
 def stop(message):
+    write_summary("failure", "Developer cycle failed", message)
     print("STOP:", message, file=sys.stderr)
     raise SystemExit(1)
 
@@ -51,8 +64,14 @@ def api(method, path, payload=None):
 
 # Avoid creating a queue of unreviewed, repetitive proposals.
 open_prs = api("GET", "/pulls?state=open&per_page=100")
-if any(p.get("title", "").startswith("AI proposal:") for p in open_prs):
-    print("An AI proposal is already open; skipping this cycle.")
+existing_proposal = next((p for p in open_prs if p.get("title", "").startswith("AI proposal:")), None)
+if existing_proposal:
+    write_summary(
+        "skipped",
+        "An AI proposal is already awaiting review",
+        "No new branch or pull request was created. Review or close the existing proposal first. "
+        + str(existing_proposal.get("html_url", "")),
+    )
     raise SystemExit(0)
 
 base = run(["git", "branch", "--show-current"]).strip() or "main"
@@ -173,8 +192,19 @@ except FileNotFoundError:
 patch = (response.stdout or "").strip()
 if response.returncode:
     stop("Copilot CLI failed (exit " + str(response.returncode) + "): " + patch[-3000:])
-if patch == "NO_CHANGE" or not patch:
-    print("No safe improvement found this cycle.")
+if patch == "NO_CHANGE":
+    write_summary(
+        "no-change",
+        "Copilot found no safe improvement this cycle",
+        "The source files were reviewed, but Copilot did not return a focused patch that met the current safety rules. The next scheduled cycle can try again.",
+    )
+    raise SystemExit(0)
+if not patch:
+    write_summary(
+        "no-change",
+        "Copilot returned an empty response",
+        "No source files were changed and no pull request was created. Check the Copilot CLI output in this run's logs.",
+    )
     raise SystemExit(0)
 if patch.startswith("```"):
     patch = re.sub(r"^```(?:diff)?\s*", "", patch)
@@ -201,7 +231,7 @@ run(["git", "apply", "--check", str(patch_file)])
 run(["git", "apply", str(patch_file)])
 patch_file.unlink(missing_ok=True)
 if not run(["git", "status", "--short"]).strip():
-    print("Patch produced no changes.")
+    write_summary("no-change", "Patch did not change tracked files", "The generated patch applied without producing a tracked source or test change. No pull request was created.")
     raise SystemExit(0)
 
 # Run the project's available checks before any push or pull request.
@@ -228,4 +258,11 @@ pr = api("POST", "/pulls", {
         "automatically."
     )
 })
-print("PULL REQUEST:", pr.get("html_url", "created"))
+pr_url = pr.get("html_url", "")
+write_summary(
+    "pull-request",
+    "Reviewable improvement pull request created",
+    "Pull request: " + (pr_url or "GitHub created the pull request but did not return its browser URL.")
+    + "\\n\\nThe configured test, lint, and build checks completed before the proposal was pushed. Review the diff and test the game in a browser before merging.",
+)
+print("PULL REQUEST:", pr_url or "created")
