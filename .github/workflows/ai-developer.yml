@@ -1,0 +1,50 @@
+name: Sphere Strike AI Developer
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */4 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: sphere-strike-ai-developer
+  cancel-in-progress: false
+
+jobs:
+  improve-game:
+    name: Propose one safe game improvement
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out Sphere Strike
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate agent script
+        run: python -m py_compile scripts/ai_developer.py
+
+      - name: Run one bounded AI development cycle
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/ai_developer.py
