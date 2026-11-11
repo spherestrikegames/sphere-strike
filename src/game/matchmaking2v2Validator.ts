@@ -34,17 +34,21 @@ export interface Authoritative2v2Room {
 /**
  * Assigns a joining player to the team with fewer players ('ALPHA' vs 'OMEGA', max 2 per team in 2v2)
  */
-export function assignBalancedTeam(room: Authoritative2v2Room, preferredTeam?: TeamType): TeamType {
+export function assignBalancedTeam(room: Authoritative2v2Room, preferredTeam?: TeamType): TeamType | null {
   let alphaCount = 0;
   let omegaCount = 0;
-  for (const p of room.players.values()) {
-    if (p.team === 'ALPHA') alphaCount++;
-    else omegaCount++;
+  for (const player of room.players.values()) {
+    if (player.team === 'ALPHA') alphaCount++;
+    else if (player.team === 'OMEGA') omegaCount++;
   }
 
   const maxPerTeam = Math.ceil(room.maxPlayers / 2);
+  if (alphaCount >= maxPerTeam && omegaCount >= maxPerTeam) return null;
+
   if (preferredTeam === 'ALPHA' && alphaCount < maxPerTeam) return 'ALPHA';
   if (preferredTeam === 'OMEGA' && omegaCount < maxPerTeam) return 'OMEGA';
+  if (alphaCount >= maxPerTeam) return 'OMEGA';
+  if (omegaCount >= maxPerTeam) return 'ALPHA';
 
   return alphaCount <= omegaCount ? 'ALPHA' : 'OMEGA';
 }
@@ -112,6 +116,18 @@ export function processAuthoritativeDamage(
   const attacker = room.players.get(attackerId);
   const target = room.players.get(targetId);
 
+  if (room.gameState !== 'playing') {
+    return {
+      accepted: false,
+      reason: 'match_not_playing',
+      appliedDamage: 0,
+      targetHealth: target?.health ?? 0,
+      targetShield: target?.shield ?? 0,
+      eliminated: false,
+      winningTeam: room.winningTeam,
+    };
+  }
+
   if (!attacker || !target) {
     return {
       accepted: false,
@@ -121,6 +137,18 @@ export function processAuthoritativeDamage(
       targetShield: target?.shield ?? 0,
       eliminated: false,
       winningTeam: null,
+    };
+  }
+
+  if (attackerId === targetId) {
+    return {
+      accepted: false,
+      reason: 'self_damage_blocked',
+      appliedDamage: 0,
+      targetHealth: target.health,
+      targetShield: target.shield,
+      eliminated: false,
+      winningTeam: room.winningTeam,
     };
   }
 
@@ -149,8 +177,22 @@ export function processAuthoritativeDamage(
     };
   }
 
-  // Clamp damage to realistic weapon maximums (anti-cheat)
-  const clampedDamage = Math.max(1, Math.min(250, Math.round(Number(rawDamage) || 0)));
+  // Reject malformed or non-positive damage instead of turning it into a 1-point hit.
+  const numericDamage = Number(rawDamage);
+  if (!Number.isFinite(numericDamage) || numericDamage <= 0) {
+    return {
+      accepted: false,
+      reason: 'invalid_damage',
+      appliedDamage: 0,
+      targetHealth: target.health,
+      targetShield: target.shield,
+      eliminated: false,
+      winningTeam: room.winningTeam,
+    };
+  }
+
+  // Clamp damage to realistic weapon maximums (anti-cheat).
+  const clampedDamage = Math.max(1, Math.min(250, Math.round(numericDamage)));
   let remaining = clampedDamage;
 
   if (target.shield > 0) {
@@ -213,11 +255,24 @@ export function validateBuildingPlacement(
   if (!piece || typeof piece !== 'object') {
     return { accepted: false, reason: 'invalid_piece' };
   }
+
+  const player = room.players.get(playerId);
+  if (!player) return { accepted: false, reason: 'missing_player' };
+  if (!player.isAlive) return { accepted: false, reason: 'player_not_alive' };
+  if (room.gameState !== 'playing') return { accepted: false, reason: 'match_not_playing' };
+  if (typeof piece.id !== 'string' || piece.id.trim().length === 0) {
+    return { accepted: false, reason: 'invalid_piece_id' };
+  }
+  if (room.builds.has(piece.id)) return { accepted: false, reason: 'duplicate_id' };
+
   if (
     !Number.isFinite(piece.x) ||
     !Number.isFinite(piece.y) ||
     !Number.isFinite(piece.z) ||
+    !Number.isFinite(piece.rotY) ||
     Math.abs(piece.x) > maxWorldBound ||
+    piece.y < -25 ||
+    piece.y > 350 ||
     Math.abs(piece.z) > maxWorldBound
   ) {
     return { accepted: false, reason: 'out_of_bounds' };
