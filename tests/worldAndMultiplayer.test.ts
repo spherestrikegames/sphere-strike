@@ -181,6 +181,7 @@ test('6. Authoritative 4-Player 2v2 Matchmaking, Friendly-Fire Protection & Team
   // Join 4 players and verify 2v2 team balancing (2 ALPHA, 2 OMEGA)
   for (const id of ['p1', 'p2', 'p3', 'p4']) {
     const team = assignBalancedTeam(room);
+    if (!team) throw new Error('A 4-player room should have a free team slot before the fourth player joins.');
     room.players.set(id, {
       id,
       name: `Player_${id}`,
@@ -200,6 +201,8 @@ test('6. Authoritative 4-Player 2v2 Matchmaking, Friendly-Fire Protection & Team
     });
   }
 
+  assert.strictEqual(assignBalancedTeam(room), null, 'A full 2v2 room must reject a fifth player');
+
   const teams = Array.from(room.players.values()).map((p) => p.team);
   assert.strictEqual(teams.filter((t) => t === 'ALPHA').length, 2, 'Team ALPHA must have exactly 2 players');
   assert.strictEqual(teams.filter((t) => t === 'OMEGA').length, 2, 'Team OMEGA must have exactly 2 players');
@@ -213,6 +216,18 @@ test('6. Authoritative 4-Player 2v2 Matchmaking, Friendly-Fire Protection & Team
   assert.strictEqual(ffResult.accepted, false, 'Friendly fire between ALPHA teammates must be blocked');
   assert.strictEqual(ffResult.reason, 'friendly_fire_blocked');
   assert.strictEqual(alphaPlayers[1].shield, 100, 'Teammate shield must remain untouched');
+
+  // Reject self-damage and malformed damage before changing player state.
+  const selfHit = processAuthoritativeDamage(room, alphaPlayers[0].id, alphaPlayers[0].id, 50);
+  assert.strictEqual(selfHit.accepted, false);
+  assert.strictEqual(selfHit.reason, 'self_damage_blocked');
+  const invalidHit = processAuthoritativeDamage(room, alphaPlayers[0].id, omegaPlayers[0].id, Number.NaN);
+  assert.strictEqual(invalidHit.accepted, false);
+  assert.strictEqual(invalidHit.reason, 'invalid_damage');
+  const lobbyRoom: Authoritative2v2Room = { ...room, gameState: 'lobby' };
+  const lobbyHit = processAuthoritativeDamage(lobbyRoom, alphaPlayers[0].id, omegaPlayers[0].id, 50);
+  assert.strictEqual(lobbyHit.accepted, false);
+  assert.strictEqual(lobbyHit.reason, 'match_not_playing');
 
   // Verify Enemy Damage & Anti-Cheat Damage Clamping (9999 -> 250 max)
   const hit1 = processAuthoritativeDamage(room, alphaPlayers[0].id, omegaPlayers[0].id, 9999, true, 'Sniper');
@@ -241,6 +256,12 @@ test('6. Authoritative 4-Player 2v2 Matchmaking, Friendly-Fire Protection & Team
   assert.strictEqual(clampedT.x, 410);
   assert.strictEqual(clampedT.z, -410);
 
+  const buildRoom: Authoritative2v2Room = {
+    ...room,
+    gameState: 'playing',
+    players: new Map(room.players),
+    builds: new Map(),
+  };
   const piece = {
     id: 'b1',
     type: 'wall' as const,
@@ -254,11 +275,26 @@ test('6. Authoritative 4-Player 2v2 Matchmaking, Friendly-Fire Protection & Team
     ownerId: 'p1',
     createdAt: Date.now(),
   };
-  assert.strictEqual(validateBuildingPlacement(room, 'p1', piece).accepted, true);
+  assert.strictEqual(validateBuildingPlacement(buildRoom, 'p1', piece).accepted, true);
   assert.strictEqual(
-    validateBuildingPlacement(room, 'p2', { ...piece, id: 'b2' }).accepted,
+    validateBuildingPlacement(buildRoom, 'p2', { ...piece, id: 'b2' }).accepted,
     false,
     'Duplicate overlapping build in same grid cell must be rejected'
+  );
+  assert.strictEqual(
+    validateBuildingPlacement(buildRoom, 'unknown-player', { ...piece, id: 'b3' }).reason,
+    'missing_player',
+    'A player who is not in the room must not place builds'
+  );
+  assert.strictEqual(
+    validateBuildingPlacement(buildRoom, 'p1', { ...piece, y: 500, id: 'b4' }).reason,
+    'out_of_bounds',
+    'Build height must be bounded as well as horizontal position'
+  );
+  assert.strictEqual(
+    validateBuildingPlacement(buildRoom, 'p1', { ...piece, id: 'b1', x: 80 }).reason,
+    'duplicate_id',
+    'A build identifier cannot be reused for a second structure'
   );
 });
 

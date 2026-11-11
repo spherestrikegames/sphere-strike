@@ -1,4 +1,5 @@
 name: Sphere Strike AI Developer
+run-name: Sphere Strike AI Developer (${{ github.event_name }})
 
 on:
   workflow_dispatch:
@@ -51,3 +52,17 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python scripts/ai_developer.py
+
+      - name: Explain failures before the developer script starts
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -s "$GITHUB_STEP_SUMMARY" ]; then
+            {
+              echo "## Sphere Strike AI Developer"
+              echo
+              echo "**Result:** workflow stopped before the developer script reported an outcome."
+              echo
+              echo "Check the failed setup or validation step above. GitHub may also delay scheduled workflow starts."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

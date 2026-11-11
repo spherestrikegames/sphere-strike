@@ -212,12 +212,16 @@ async function startServer() {
     const { player } = req.body || {};
     const playerId = player?.id || `p_${Date.now()}`;
 
-    // Find an open 2v2 room with < 4 players in lobby state
-    let targetRoom: PartyRoom | undefined;
-    for (const r of rooms.values()) {
-      if (r.mode === '2v2' && r.players.size < 4 && r.gameState === 'lobby') {
-        targetRoom = r;
-        break;
+    // Reuse this player's current queue room before looking for a new open room.
+    let targetRoom: PartyRoom | undefined = Array.from(rooms.values()).find(
+      (r) => r.mode === '2v2' && r.gameState === 'lobby' && r.players.has(playerId)
+    );
+    if (!targetRoom) {
+      for (const r of rooms.values()) {
+        if (r.mode === '2v2' && r.players.size < 4 && r.gameState === 'lobby') {
+          targetRoom = r;
+          break;
+        }
       }
     }
 
@@ -227,7 +231,12 @@ async function startServer() {
       rooms.set(code, targetRoom);
     }
 
-    const assignedTeam = assignBalancedTeam(targetRoom.authState, player?.team);
+    const existingPlayer = targetRoom.players.get(playerId);
+    const assignedTeam = existingPlayer?.team || assignBalancedTeam(targetRoom.authState, player?.team);
+    if (!assignedTeam) {
+      return res.status(409).json({ success: false, error: 'This 2v2 room is full.' });
+    }
+
     const partyPlayer: PartyPlayer = {
       id: playerId,
       name: player?.name || 'Player',
@@ -289,11 +298,20 @@ async function startServer() {
       rooms.set(upperCode, room);
     }
 
+    const existingPlayer = room.players.get(playerId);
+    if (!existingPlayer && room.players.size >= room.maxPlayers) {
+      return res.status(409).json({ success: false, error: 'This room is full.' });
+    }
+
     if (room.players.size === 0) {
       room.hostId = playerId;
     }
 
-    const assignedTeam = room.players.get(playerId)?.team || assignBalancedTeam(room.authState, player?.team);
+    const assignedTeam = existingPlayer?.team || assignBalancedTeam(room.authState, player?.team);
+    if (!assignedTeam) {
+      return res.status(409).json({ success: false, error: 'No team slots are available in this room.' });
+    }
+
     const partyPlayer: PartyPlayer = {
       id: playerId,
       name: player?.name || 'Player',
