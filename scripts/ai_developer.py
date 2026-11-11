@@ -19,9 +19,9 @@ def write_summary(status, title, details):
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as summary:
-            summary.write(f"## Sphere Strike AI Developer: {title}\\n\\n")
-            summary.write(f"**Result:** {status}\\n\\n")
-            summary.write(message[:6000] + "\\n")
+            summary.write(f"## Sphere Strike AI Developer: {title}\n\n")
+            summary.write(f"**Result:** {status}\n\n")
+            summary.write(message[:6000] + "\n")
 
 
 def stop(message):
@@ -263,6 +263,6 @@ write_summary(
     "pull-request",
     "Reviewable improvement pull request created",
     "Pull request: " + (pr_url or "GitHub created the pull request but did not return its browser URL.")
-    + "\\n\\nThe configured test, lint, and build checks completed before the proposal was pushed. Review the diff and test the game in a browser before merging.",
+    + "\n\nThe configured test, lint, and build checks completed before the proposal was pushed. Review the diff and test the game in a browser before merging.",
 )
 print("PULL REQUEST:", pr_url or "created")
