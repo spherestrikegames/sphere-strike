@@ -442,11 +442,18 @@ export function getStrikeIslandRoadInfo(x: number, z: number): RoadQueryInfo {
   let bestGlobalT = 0;
   let bestPointX = x;
   let bestPointZ = z;
+  let bestDirX = 1;
+  let bestDirZ = 0;
 
   for (const hwy of STRIKE_ISLAND_HIGHWAYS) {
     const pts = hwy.points;
     const numSegs = pts.length - 1;
     for (let i = 0; i < numSegs; i++) {
+      const dx = pts[i + 1].x - pts[i].x;
+      const dz = pts[i + 1].z - pts[i].z;
+      const segLength = Math.hypot(dx, dz);
+      if (segLength < 0.0001) continue;
+
       const res = distToSegment2D(x, z, pts[i].x, pts[i].z, pts[i + 1].x, pts[i + 1].z);
       if (res.dist < bestDist) {
         bestDist = res.dist;
@@ -454,6 +461,8 @@ export function getStrikeIslandRoadInfo(x: number, z: number): RoadQueryInfo {
         bestGlobalT = (i + res.t) / numSegs;
         bestPointX = res.closestX;
         bestPointZ = res.closestZ;
+        bestDirX = dx / segLength;
+        bestDirZ = dz / segLength;
       }
     }
   }
@@ -466,16 +475,36 @@ export function getStrikeIslandRoadInfo(x: number, z: number): RoadQueryInfo {
   const isOnRoad = bestDist <= halfW;
   const isNearRoad = bestDist <= halfW + 4.5;
 
+  // Match the road ribbon geometry: its centerline follows terrain + 0.1m,
+  // while each non-bridge edge is raised as needed to avoid cutting into slopes.
+  let centerY = getStrikeIslandElevation(bestPointX, bestPointZ) + 0.1;
   let isBridge = false;
-  let roadElevation = getStrikeIslandElevation(bestPointX, bestPointZ) + 0.08;
 
   if (bestHighway.bridgeRanges) {
     for (const br of bestHighway.bridgeRanges) {
       if (bestGlobalT >= br.tStart && bestGlobalT <= br.tEnd) {
         isBridge = true;
-        roadElevation = br.deckY;
+        const rampFrac = 0.18;
+        const spanT = (bestGlobalT - br.tStart) / (br.tEnd - br.tStart);
+        let bridgeBlend = 1.0;
+        if (spanT < rampFrac) bridgeBlend = smoothstep(0, rampFrac, spanT);
+        else if (spanT > 1 - rampFrac) bridgeBlend = smoothstep(0, rampFrac, 1 - spanT);
+        centerY = THREE.MathUtils.lerp(centerY, br.deckY, bridgeBlend);
       }
     }
+  }
+
+  let roadElevation = centerY;
+  if (!isBridge) {
+    const perpX = -bestDirZ;
+    const perpZ = bestDirX;
+    const leftY = Math.max(centerY, getStrikeIslandElevation(bestPointX + perpX * halfW, bestPointZ + perpZ * halfW) + 0.1);
+    const rightY = Math.max(centerY, getStrikeIslandElevation(bestPointX - perpX * halfW, bestPointZ - perpZ * halfW) + 0.1);
+
+    // The rendered ribbon is a linear cross-section between its left and right edges.
+    const lateralOffset = (x - bestPointX) * perpX + (z - bestPointZ) * perpZ;
+    const across = THREE.MathUtils.clamp((lateralOffset + halfW) / (2 * halfW), 0, 1);
+    roadElevation = THREE.MathUtils.lerp(leftY, rightY, across);
   }
 
   return {
