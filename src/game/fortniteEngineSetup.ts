@@ -338,24 +338,9 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
   ].filter(Boolean);
 
   const enemyTeams: TeamType[] = ['OMEGA', 'SHADOW', 'PHOENIX'];
-  const rankPrefixes = ['[PRO]', '[ELITE]', '[ALPHA]', '[CHAMPION]', '[UNREAL]', '[MASTER]'];
-  const skinNameMap: Record<string, string> = {
-    jonesy: 'Jonesy',
-    ramirez: 'Ramirez',
-    peely: 'Peely',
-    midas: 'Midas',
-    drift: 'Drift',
-    black_knight: 'Knight',
-    renegade_raider: 'Renegade',
-    goku: 'Goku',
-  };
 
   for (let i = 0; i < count; i++) {
     const skin = FORTNITE_SKINS[i % FORTNITE_SKINS.length];
-    const rank = rankPrefixes[i % rankPrefixes.length];
-    const skinBase = skinNameMap[skin.id] || skin.name.split(' ')[0];
-    const tagNum = Math.floor(1000 + ((i * 1337 + 4021) % 8999));
-    const name = `${rank} ${skinBase}#${tagNum}`;
     const poi = ISLAND_POIS[i % ISLAND_POIS.length];
     const wepPreset = botWeapons[i % botWeapons.length];
     const team = enemyTeams[i % enemyTeams.length];
@@ -369,7 +354,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
 
     const bot: BotPlayer = {
       id: `bot_${i}`,
-      name,
+      name: 'AI_player',
       isAI: true,
       team,
       skinId: skin.id,
