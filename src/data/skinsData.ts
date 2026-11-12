@@ -14,6 +14,11 @@ export interface FortniteSkin {
   unlockLevel: number;
   hairStyle: 'spikes' | 'swept' | 'curly' | 'crest' | 'fringe' | 'short';
   accessory: 'visor' | 'scarf' | 'shoulder-pad' | 'headband' | 'earpiece' | 'backpack' | 'none';
+  // Kept optional for compatibility with the legacy sphere-rig export.
+  hasHat?: boolean;
+  hatColor?: string;
+  hasMask?: boolean;
+  isGold?: boolean;
 }
 
 export const FORTNITE_SKINS: FortniteSkin[] = [
