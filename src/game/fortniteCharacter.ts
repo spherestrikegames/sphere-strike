@@ -18,492 +18,173 @@ export interface CharacterMeshRig {
   updateAnimation: (time: number, isMoving: boolean, isSwinging: boolean, isAiming: boolean) => void;
 }
 
+const LEGACY_SKIN_IDS: Record<string, string> = {
+  jonesy: 'zyro', renegade_raider: 'kairox', midas: 'rift', black_knight: 'nex',
+  peely: 'orbito', drift: 'vexlo', goku: 'voltix', travis_scott: 'nex',
+  galaxy: 'glitch', omega: 'glitch', raven: 'vexlo', skull_trooper: 'nex', aura: 'zyro',
+};
+
+function roundedMaterial(color: string | number, roughness = 0.72) {
+  return new THREE.MeshStandardMaterial({ color, roughness, metalness: 0.02 });
+}
+
 export function buildCharacterModel(
-  skinId: string,
+  requestedSkinId: string,
   weaponType: WeaponType = 'ar',
   rarity: WeaponRarity = 'epic'
 ): CharacterMeshRig {
-  const skin = FORTNITE_SKINS.find((s) => s.id === skinId) || FORTNITE_SKINS[0];
+  const skinId = LEGACY_SKIN_IDS[requestedSkinId] || requestedSkinId;
+  const skin = FORTNITE_SKINS.find((item) => item.id === skinId) || FORTNITE_SKINS[0];
   const root = new THREE.Group();
+  root.name = `character-${skin.id}`;
+  const skinMat = roundedMaterial(skin.headColor);
+  const hairMat = roundedMaterial(skin.hairColor);
+  const shirtMat = roundedMaterial(skin.shirtColor);
+  const pantsMat = roundedMaterial(skin.pantsColor);
+  const accentMat = roundedMaterial(skin.glowColor, 0.48);
+  const darkMat = roundedMaterial('#202938');
+  const shoeMat = roundedMaterial('#18202b');
 
-  const skinColorInt = parseInt(skin.headColor.replace('#', '0x'));
-  const hairColorInt = parseInt(skin.hairColor.replace('#', '0x'));
-  const shirtColorInt = parseInt(skin.shirtColor.replace('#', '0x'));
-  const pantsColorInt = parseInt(skin.pantsColor.replace('#', '0x'));
-
-  // PBR Glossy Stylized Materials (MeshPhysicalMaterial with clearcoat & specular highlights)
-  const skinMat = new THREE.MeshPhysicalMaterial({
-    color: skinColorInt,
-    roughness: 0.25,
-    clearcoat: 0.6,
-    clearcoatRoughness: 0.1,
-  });
-  const hairMat = new THREE.MeshPhysicalMaterial({
-    color: hairColorInt,
-    roughness: 0.35,
-    clearcoat: 0.5,
-  });
-  const shirtMat = new THREE.MeshPhysicalMaterial({
-    color: shirtColorInt,
-    metalness: skin.isGold ? 0.9 : 0.15,
-    roughness: skin.isGold ? 0.15 : 0.2,
-    clearcoat: 0.8,
-    clearcoatRoughness: 0.1,
-  });
-  const vestMat = new THREE.MeshPhysicalMaterial({
-    color: skin.isGold ? 0xb45309 : 0x1e293b,
-    metalness: skin.isGold ? 0.85 : 0.25,
-    roughness: 0.2,
-    clearcoat: 0.75,
-    clearcoatRoughness: 0.1,
-  });
-  const pantsMat = new THREE.MeshPhysicalMaterial({
-    color: pantsColorInt,
-    roughness: 0.28,
-    clearcoat: 0.5,
-  });
-  const darkGearMat = new THREE.MeshPhysicalMaterial({
-    color: 0x0f172a,
-    roughness: 0.2,
-    metalness: 0.3,
-    clearcoat: 0.8,
-  });
-  const buckleMat = new THREE.MeshPhysicalMaterial({
-    color: 0xfacc15,
-    metalness: 0.95,
-    roughness: 0.15,
-    clearcoat: 1.0,
-  });
-  const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const eyePupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
-
-  // 1. BODY / TORSO GROUP
-  const bodyGroup = new THREE.Group();
-  bodyGroup.position.set(0, 1.15, 0);
-
-  // Main Torso Mesh
-  const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.85, 0.38), shirtMat);
-  bodyMesh.castShadow = true;
-  bodyMesh.receiveShadow = true;
-  bodyGroup.add(bodyMesh);
-
-  // Tactical Armor Vest (Over Chest)
-  const vestMesh = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.55, 0.44), vestMat);
-  vestMesh.position.set(0, 0.1, 0);
-  vestMesh.castShadow = true;
-  bodyGroup.add(vestMesh);
-
-  // Tactical Pouches on Vest
-  for (const px of [-0.18, 0, 0.18]) {
-    const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.08), darkGearMat);
-    pouch.position.set(px, 0.02, 0.25);
-    bodyGroup.add(pouch);
+  // Compact, friendly proportions: large head, short torso and chunky limbs.
+  const body = new THREE.Group();
+  body.position.y = 1.12;
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.34, 5, 10), shirtMat);
+  torso.scale.set(1, 1, 0.72);
+  torso.castShadow = true;
+  body.add(torso);
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.53, 0.11, 0.34), darkMat);
+  belt.position.y = -0.27;
+  body.add(belt);
+  const chestMark = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.16, 0.035), accentMat);
+  chestMark.position.set(0.13, 0.08, 0.245);
+  body.add(chestMark);
+  if (skin.accessory === 'backpack') {
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.48, 0.2), darkMat);
+    pack.position.set(0, 0.02, -0.29);
+    body.add(pack);
   }
+  root.add(body);
 
-  // Radio Comms Unit on Left Shoulder
-  const radio = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.08), darkGearMat);
-  radio.position.set(-0.28, 0.42, 0.05);
-  bodyGroup.add(radio);
-  const radioAntenna = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.01, 0.01, 0.14, 4),
-    darkGearMat
-  );
-  radioAntenna.position.set(-0.28, 0.54, 0.05);
-  bodyGroup.add(radioAntenna);
-
-  // Utility Belt & Gold/Silver Buckle
-  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 0.4), darkGearMat);
-  belt.position.set(0, -0.38, 0);
-  bodyGroup.add(belt);
-  const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.44), buckleMat);
-  buckle.position.set(0, -0.38, 0.01);
-  bodyGroup.add(buckle);
-
-  // Back-Bling (Tactical Backpack or Tech Shield)
-  const backBling = new THREE.Group();
-  backBling.position.set(0, 0.08, -0.26);
-  const packMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.44, 0.5, 0.18),
-    new THREE.MeshStandardMaterial({
-      color: skin.isGold ? 0xf59e0b : 0x0f172a,
-      metalness: skin.isGold ? 0.9 : 0.4,
-      roughness: 0.5,
-    })
-  );
-  packMesh.castShadow = true;
-  backBling.add(packMesh);
-
-  // Back Bling emblem/straps
-  const strapL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.52, 0.2), darkGearMat);
-  strapL.position.set(-0.16, 0.02, 0.08);
-  backBling.add(strapL);
-  const strapR = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.52, 0.2), darkGearMat);
-  strapR.position.set(0.16, 0.02, 0.08);
-  backBling.add(strapR);
-
-  bodyGroup.add(backBling);
-  root.add(bodyGroup);
-
-  // 2. HEAD GROUP (Detailed facial features, hair, eyes, headgear)
-  const headGroup = new THREE.Group();
-  headGroup.position.set(0, 1.82, 0);
-
-  // Head Base
-  const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.44, 0.42), skinMat);
+  const head = new THREE.Group();
+  head.position.set(0, 1.83, 0.015);
+  const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.43, 18, 14), skinMat);
+  headMesh.scale.set(1, 1.02, 0.9);
   headMesh.castShadow = true;
-  headGroup.add(headMesh);
+  head.add(headMesh);
 
-  // Eyes & Eyebrows (Expressive and stylized)
-  if (!skin.hasMask) {
-    // Left Eye
-    const eyeL = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.07), eyeWhiteMat);
-    eyeL.position.set(-0.1, 0.02, 0.215);
-    headGroup.add(eyeL);
-    const pupilL = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 0.05), eyePupilMat);
-    pupilL.position.set(-0.09, 0.02, 0.218);
-    headGroup.add(pupilL);
-
-    // Right Eye
-    const eyeR = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.07), eyeWhiteMat);
-    eyeR.position.set(0.1, 0.02, 0.215);
-    headGroup.add(eyeR);
-    const pupilR = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 0.05), eyePupilMat);
-    pupilR.position.set(0.09, 0.02, 0.218);
-    headGroup.add(pupilR);
-
-    // Eyebrows
-    const browL = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.03), hairMat);
-    browL.position.set(-0.1, 0.09, 0.216);
-    browL.rotateZ(-0.08);
-    headGroup.add(browL);
-
-    const browR = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.03), hairMat);
-    browR.position.set(0.1, 0.09, 0.216);
-    browR.rotateZ(0.08);
-    headGroup.add(browR);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x172333 });
+  for (const x of [-0.145, 0.145]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.043, 10, 8), eyeMat);
+    eye.position.set(x, -0.025, 0.365);
+    head.add(eye);
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.035, 0.035), hairMat);
+    brow.position.set(x, 0.075, 0.36);
+    brow.rotation.z = x < 0 ? -0.12 : 0.12;
+    head.add(brow);
   }
+  const smile = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.018, 0.018), darkMat);
+  smile.position.set(0, -0.17, 0.378);
+  head.add(smile);
 
-  // Hair / Hat / Mask Specifics
-  if (skin.hasMask) {
-    // Cyber / Kitsune / Ninja Mask
-    const mask = new THREE.Mesh(
-      new THREE.BoxGeometry(0.45, 0.36, 0.45),
-      new THREE.MeshStandardMaterial({
-        color: 0xdb2777,
-        metalness: 0.6,
-        roughness: 0.3,
-      })
-    );
-    headGroup.add(mask);
-
-    // Glowing Neon Visor / Eye slits
-    const visor = new THREE.Mesh(
-      new THREE.BoxGeometry(0.32, 0.06, 0.48),
-      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
-    );
-    visor.position.set(0, 0.04, 0.01);
-    headGroup.add(visor);
-  } else if (skin.hasHat) {
-    // Military Helmet / Space Helmet
-    const helmet = new THREE.Mesh(
-      new THREE.BoxGeometry(0.48, 0.26, 0.48),
-      new THREE.MeshStandardMaterial({
-        color: parseInt(skin.hatColor?.replace('#', '0x') || '0x18181b'),
-        metalness: 0.4,
-        roughness: 0.5,
-      })
-    );
-    helmet.position.y = 0.2;
-    headGroup.add(helmet);
-
-    // Helmet brim
-    const brim = new THREE.Mesh(
-      new THREE.BoxGeometry(0.46, 0.04, 0.12),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a })
-    );
-    brim.position.set(0, 0.08, 0.28);
-    headGroup.add(brim);
-  } else {
-    // Detailed Hair with volume
-    const hair = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.22, 0.46), hairMat);
-    hair.position.set(0, 0.2, -0.02);
-    headGroup.add(hair);
-
-    const hairSideL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.24, 0.4), hairMat);
-    hairSideL.position.set(-0.22, 0.08, 0);
-    headGroup.add(hairSideL);
-
-    const hairSideR = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.24, 0.4), hairMat);
-    hairSideR.position.set(0.22, 0.08, 0);
-    headGroup.add(hairSideR);
+  // Distinct hair silhouettes built from soft, chunky tufts.
+  const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.405, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.53), hairMat);
+  hairCap.position.y = 0.19;
+  head.add(hairCap);
+  const tuftCount = skin.hairStyle === 'spikes' || skin.hairStyle === 'crest' ? 5 : 3;
+  for (let i = 0; i < tuftCount; i++) {
+    const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.12, skin.hairStyle === 'crest' ? 0.36 : 0.24, 7), hairMat);
+    const x = (i - (tuftCount - 1) / 2) * 0.14;
+    tuft.position.set(x, 0.43 + (i % 2) * 0.025, -0.01);
+    tuft.rotation.z = skin.hairStyle === 'swept' ? -0.48 : (i - 2) * 0.12;
+    tuft.rotation.x = -0.18;
+    head.add(tuft);
   }
-
-  // Peely Banana Stem Top
-  if (skin.id === 'peely') {
-    const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.09, 0.38, 6),
-      new THREE.MeshStandardMaterial({ color: 0x65a30d, roughness: 0.7 })
-    );
-    stem.position.y = 0.36;
-    stem.rotateZ(-0.1);
-    headGroup.add(stem);
+  if (skin.accessory === 'visor') {
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.15, 0.12), accentMat);
+    visor.position.set(0, 0.015, 0.34);
+    head.add(visor);
+  } else if (skin.accessory === 'headband') {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.39, 0.045, 6, 18, Math.PI), accentMat);
+    band.position.y = 0.13;
+    band.rotation.x = Math.PI / 2;
+    head.add(band);
+  } else if (skin.accessory === 'earpiece') {
+    const earpiece = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), accentMat);
+    earpiece.position.set(0.39, -0.02, 0.02);
+    head.add(earpiece);
   }
+  root.add(head);
 
-  // Galaxy Skin Cosmic Aura
-  if (skin.id === 'galaxy') {
-    const galaxyHalo = new THREE.Mesh(
-      new THREE.RingGeometry(0.28, 0.38, 16),
-      new THREE.MeshBasicMaterial({
-        color: 0xc084fc,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.8,
-      })
-    );
-    galaxyHalo.position.y = 0.32;
-    galaxyHalo.rotateX(Math.PI / 2);
-    headGroup.add(galaxyHalo);
-  }
-
-  // Omega Neon Lights
-  if (skin.id === 'omega') {
-    const omegaChestLight = new THREE.Mesh(
-      new THREE.BoxGeometry(0.35, 0.08, 0.46),
-      new THREE.MeshBasicMaterial({ color: 0xef4444 })
-    );
-    omegaChestLight.position.set(0, 0.12, 0);
-    bodyGroup.add(omegaChestLight);
-  }
-
-  // Skull Trooper Skeleton Ribs
-  if (skin.id === 'skull_trooper') {
-    for (let r = 0; r < 3; r++) {
-      const rib = new THREE.Mesh(
-        new THREE.BoxGeometry(0.44, 0.04, 0.46),
-        new THREE.MeshBasicMaterial({ color: 0xa855f7 })
-      );
-      rib.position.set(0, 0.18 - r * 0.12, 0);
-      bodyGroup.add(rib);
-    }
-  }
-
-  // Travis Scott Gold Chain & Cactus Jack Tag
-  if (skin.id === 'travis_scott') {
-    const chain = new THREE.Mesh(
-      new THREE.TorusGeometry(0.22, 0.025, 8, 16),
-      new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.95, roughness: 0.15 })
-    );
-    chain.position.set(0, 0.22, 0.12);
-    chain.rotateX(Math.PI / 3);
-    bodyGroup.add(chain);
-  }
-
-  // Raven Spectral Violet Eyes & Feather Cowl
-  if (skin.id === 'raven') {
-    const ravenEyeL = new THREE.Mesh(
-      new THREE.SphereGeometry(0.035, 8, 8),
-      new THREE.MeshBasicMaterial({ color: 0xa855f7 })
-    );
-    ravenEyeL.position.set(-0.1, 0.04, 0.22);
-    headGroup.add(ravenEyeL);
-
-    const ravenEyeR = new THREE.Mesh(
-      new THREE.SphereGeometry(0.035, 8, 8),
-      new THREE.MeshBasicMaterial({ color: 0xa855f7 })
-    );
-    ravenEyeR.position.set(0.1, 0.04, 0.22);
-    headGroup.add(ravenEyeR);
-  }
-
-  root.add(headGroup);
-
-  // 3. ARMS (Left & Right with sleeves, tactical gloves, wrist comms)
-  // Left Arm
-  const leftArmGroup = new THREE.Group();
-  leftArmGroup.position.set(-0.48, 1.15, 0);
-
-  const leftShoulderSleeve = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.4, 0.24), shirtMat);
-  leftShoulderSleeve.position.y = 0.2;
-  leftShoulderSleeve.castShadow = true;
-  leftArmGroup.add(leftShoulderSleeve);
-
-  const leftForearm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.44, 0.2), skinMat);
-  leftForearm.position.y = -0.18;
-  leftArmGroup.add(leftForearm);
-
-  // Tactical Glove (Left Hand)
-  const leftGlove = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.22), darkGearMat);
-  leftGlove.position.y = -0.38;
-  leftArmGroup.add(leftGlove);
-
-  root.add(leftArmGroup);
-
-  // Right Arm (Weapon holding arm)
-  const rightArmGroup = new THREE.Group();
-  rightArmGroup.position.set(0.48, 1.15, 0);
-
-  const rightShoulderSleeve = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.4, 0.24), shirtMat);
-  rightShoulderSleeve.position.y = 0.2;
-  rightShoulderSleeve.castShadow = true;
-  rightArmGroup.add(rightShoulderSleeve);
-
-  const rightForearm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.44, 0.2), skinMat);
-  rightForearm.position.y = -0.18;
-  rightArmGroup.add(rightForearm);
-
-  // Tactical Glove (Right Hand)
-  const rightGlove = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.22), darkGearMat);
-  rightGlove.position.y = -0.38;
-  rightArmGroup.add(rightGlove);
-
-  // 4. WEAPON SLOT ATTACHMENT (Directly attached to the right hand/arm)
-  const weaponSlot = new THREE.Group();
-  weaponSlot.position.set(0, -0.38, 0.08);
-  weaponSlot.rotation.x = -Math.PI / 2;
-  rightArmGroup.add(weaponSlot);
-
-  // Initial weapon mesh attachment
-  let activeWeaponMesh = createWeaponMesh(weaponType, rarity);
-  activeWeaponMesh.position.set(0, 0, 0);
-  weaponSlot.add(activeWeaponMesh);
-
-  root.add(rightArmGroup);
-
-  // 5. LEGS (With cargo pockets, combat kneepads, high-top boots)
-  // Left Leg
-  const leftLegGroup = new THREE.Group();
-  leftLegGroup.position.set(-0.18, 0.45, 0);
-
-  const leftPants = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.55, 0.26), pantsMat);
-  leftPants.position.y = 0.15;
-  leftPants.castShadow = true;
-  leftLegGroup.add(leftPants);
-
-  // Tactical Kneepad
-  const leftKneepad = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.18, 0.14), darkGearMat);
-  leftKneepad.position.set(0, -0.05, 0.11);
-  leftLegGroup.add(leftKneepad);
-
-  // Combat Boot with sole
-  const leftBoot = new THREE.Mesh(
-    new THREE.BoxGeometry(0.26, 0.32, 0.34),
-    new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 })
-  );
-  leftBoot.position.set(0, -0.28, 0.04);
-  leftBoot.castShadow = true;
-  leftLegGroup.add(leftBoot);
-
-  const leftSole = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.36), darkGearMat);
-  leftSole.position.set(0, -0.42, 0.04);
-  leftLegGroup.add(leftSole);
-
-  root.add(leftLegGroup);
-
-  // Right Leg
-  const rightLegGroup = new THREE.Group();
-  rightLegGroup.position.set(0.18, 0.45, 0);
-
-  const rightPants = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.55, 0.26), pantsMat);
-  rightPants.position.y = 0.15;
-  rightPants.castShadow = true;
-  rightLegGroup.add(rightPants);
-
-  // Tactical Kneepad & Thigh Holster
-  const rightKneepad = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.18, 0.14), darkGearMat);
-  rightKneepad.position.set(0, -0.05, 0.11);
-  rightLegGroup.add(rightKneepad);
-
-  const thighHolster = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.2), darkGearMat);
-  thighHolster.position.set(0.12, 0.18, 0);
-  rightLegGroup.add(thighHolster);
-
-  // Combat Boot with sole
-  const rightBoot = new THREE.Mesh(
-    new THREE.BoxGeometry(0.26, 0.32, 0.34),
-    new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 })
-  );
-  rightBoot.position.set(0, -0.28, 0.04);
-  rightBoot.castShadow = true;
-  rightLegGroup.add(rightBoot);
-
-  const rightSole = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.36), darkGearMat);
-  rightSole.position.set(0, -0.42, 0.04);
-  rightLegGroup.add(rightSole);
-
-  root.add(rightLegGroup);
-
-  // Method to dynamically update the held weapon
-  let currentWeaponTypeState: WeaponType = weaponType;
-  const setWeapon = (newWepType: WeaponType, newRarity: WeaponRarity = 'epic') => {
-    currentWeaponTypeState = newWepType;
-    while (weaponSlot.children.length > 0) {
-      weaponSlot.remove(weaponSlot.children[0]);
-    }
-    const newMesh = createWeaponMesh(newWepType, newRarity);
-    weaponSlot.add(newMesh);
+  const makeArm = (side: number) => {
+    const arm = new THREE.Group();
+    arm.position.set(side * 0.43, 1.27, 0);
+    const sleeve = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.31, 4, 8), shirtMat);
+    sleeve.rotation.z = -side * 0.12;
+    sleeve.castShadow = true;
+    arm.add(sleeve);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), skinMat);
+    hand.position.y = -0.35;
+    arm.add(hand);
+    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.125, 0.035, 6, 12), accentMat);
+    cuff.position.y = -0.27;
+    cuff.rotation.x = Math.PI / 2;
+    arm.add(cuff);
+    root.add(arm);
+    return arm;
   };
+  const leftArm = makeArm(-1);
+  const rightArm = makeArm(1);
+  const weaponSlot = new THREE.Group();
+  weaponSlot.position.set(0, -0.34, 0.12);
+  weaponSlot.rotation.x = -Math.PI / 2;
+  rightArm.add(weaponSlot);
+  let currentWeaponType = weaponType;
+  const setWeapon = (nextType: WeaponType, nextRarity: WeaponRarity = 'epic') => {
+    currentWeaponType = nextType;
+    weaponSlot.clear();
+    weaponSlot.add(createWeaponMesh(nextType, nextRarity));
+  };
+  setWeapon(weaponType, rarity);
 
-  // Animation Update Loop
-  const updateAnimation = (
-    time: number,
-    isMoving: boolean,
-    isSwinging: boolean,
-    isAiming: boolean
-  ) => {
-    if (isMoving) {
-      const legSwing = Math.sin(time * 12) * 0.6;
-      leftLegGroup.rotation.x = legSwing;
-      rightLegGroup.rotation.x = -legSwing;
-      leftArmGroup.rotation.x = -legSwing * 0.7;
-      if (!isAiming && !isSwinging) {
-        rightArmGroup.rotation.x = legSwing * 0.7;
-      }
-    } else {
-      leftLegGroup.rotation.x = 0;
-      rightLegGroup.rotation.x = 0;
-      leftArmGroup.rotation.x = 0;
-    }
+  const makeLeg = (side: number) => {
+    const leg = new THREE.Group();
+    leg.position.set(side * 0.19, 0.53, 0);
+    const pants = new THREE.Mesh(new THREE.CapsuleGeometry(0.145, 0.31, 4, 8), pantsMat);
+    pants.castShadow = true;
+    leg.add(pants);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.18, 0.4), shoeMat);
+    shoe.position.set(0, -0.25, 0.075);
+    shoe.castShadow = true;
+    leg.add(shoe);
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.045, 0.41), accentMat);
+    sole.position.set(0, -0.34, 0.075);
+    leg.add(sole);
+    root.add(leg);
+    return leg;
+  };
+  const leftLeg = makeLeg(-1);
+  const rightLeg = makeLeg(1);
 
+  const updateAnimation = (time: number, isMoving: boolean, isSwinging: boolean, isAiming: boolean) => {
+    const stride = isMoving ? Math.sin(time * 11) * 0.42 : Math.sin(time * 2.2) * 0.025;
+    leftLeg.rotation.x = stride;
+    rightLeg.rotation.x = -stride;
+    leftArm.rotation.x = -stride * 0.55;
     if (isSwinging) {
-      // Pickaxe swing animation
-      const swing = Math.sin(time * 20) * 0.9;
-      rightArmGroup.rotation.x = -Math.PI / 3 + swing;
-      rightArmGroup.rotation.y = -0.2;
-      weaponSlot.rotation.x = -Math.PI / 2 + swing * 1.3;
-    } else if (isAiming) {
-      // Aiming weapon forward with both hands stabilizing
-      rightArmGroup.rotation.x = -Math.PI / 2.3;
-      rightArmGroup.rotation.y = -0.15;
-      weaponSlot.rotation.x = -Math.PI / 2 - 0.05;
-      leftArmGroup.rotation.x = -Math.PI / 2.5;
-      leftArmGroup.rotation.y = 0.55;
-      leftArmGroup.rotation.z = -0.2;
+      rightArm.rotation.x = -0.85 + Math.sin(time * 17) * 0.7;
+      weaponSlot.rotation.x = -Math.PI / 2 + Math.sin(time * 17) * 0.8;
     } else {
-      // Ready weapon idle pose
-      rightArmGroup.rotation.x = -0.35;
-      rightArmGroup.rotation.y = -0.1;
-      rightArmGroup.rotation.z = 0;
+      rightArm.rotation.x = isAiming ? -0.85 : -0.12 + stride * 0.4;
       weaponSlot.rotation.x = -Math.PI / 2;
-      leftArmGroup.rotation.x = -0.2;
-      leftArmGroup.rotation.y = 0.3;
     }
+    head.rotation.y = Math.sin(time * 1.3) * 0.035;
+    body.position.y = 1.12 + (isMoving ? Math.abs(Math.sin(time * 11)) * 0.035 : Math.sin(time * 2) * 0.012);
   };
 
   return {
-    root,
-    head: headGroup,
-    body: bodyGroup,
-    leftArm: leftArmGroup,
-    rightArm: rightArmGroup,
-    leftLeg: leftLegGroup,
-    rightLeg: rightLegGroup,
-    weaponSlot,
-    skinId,
-    get currentWeaponType() {
-      return currentWeaponTypeState;
-    },
-    setWeapon,
-    updateAnimation,
+    root, head, body, leftArm, rightArm, leftLeg, rightLeg, weaponSlot, skinId: skin.id,
+    get currentWeaponType() { return currentWeaponType; },
+    setWeapon, updateAnimation,
   };
 }
 
