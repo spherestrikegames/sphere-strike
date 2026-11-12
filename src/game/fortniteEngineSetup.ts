@@ -4,7 +4,7 @@ import { BotPlayer, TeamType } from '../types';
 import { WEAPON_REGISTRY, FORTNITE_SKINS, ISLAND_POIS } from '../data/fortniteData';
 import { createFirstPersonWeaponRig } from './fortniteWeapons';
 import { createPlacedBuildingMesh } from './fortniteBuilding';
-import { buildCharacterModel, buildSphereCharacterRig, createNameTagSprite } from './fortniteCharacter';
+import { buildCharacterModel, createNameTagSprite } from './fortniteCharacter';
 import { fortniteAudio } from '../utils/audio';
 import { multiplayerClient } from '../utils/multiplayer';
 import type { FortniteEngine } from './fortniteEngine';
@@ -103,7 +103,7 @@ export function setupPlayerRigsImpl(engine: FortniteEngine) {
   engine.scene.add(engine.camera);
 
   // 3rd Person Character Rig (Uses stylized physical sphere rig with rolling core and gyro rings)
-  engine.thirdPersonRig = buildSphereCharacterRig(engine.profile.selectedSkin || 'jonesy', type, rarity, 0x0a84ff);
+  engine.thirdPersonRig = buildCharacterModel(engine.profile.selectedSkin || 'zyro', type, rarity);
 
   // Attach Player Name Tag
   engine.playerNameTag = createNameTagSprite(
@@ -181,7 +181,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
   if (engine.mode === '1v1' || engine.mode === '1v1_build_fight') {
     const bot: BotPlayer = {
       id: 'bot_1v1_opponent',
-      name: config.name,
+      name: 'AI_player',
       isAI: true,
       team: 'SHADOW',
       skinId: 'renegade_raider',
@@ -208,7 +208,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
 
     engine.bots.push(bot);
 
-    const rig = buildSphereCharacterRig('renegade_raider', bot.weapon.type, bot.weapon.rarity, 0xef4444);
+    const rig = buildCharacterModel('kairox', bot.weapon.type, bot.weapon.rarity);
     rig.root.position.set(bot.x, bot.y, bot.z);
 
     const nameTag = createNameTagSprite(
@@ -240,7 +240,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
     }> = [
       {
         id: 'bot_duo_ally',
-        name: '🛡️ [ALPHA] Vanguard_Duo',
+        name: 'AI_player',
         team: 'ALPHA',
         skinId: 'midas',
         x: 12,
@@ -250,7 +250,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
       },
       {
         id: 'bot_duo_omega_1',
-        name: '⚔️ [OMEGA] Striker_One',
+        name: 'AI_player',
         team: 'OMEGA',
         skinId: 'black_knight',
         x: -24,
@@ -260,7 +260,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
       },
       {
         id: 'bot_duo_omega_2',
-        name: '⚔️ [OMEGA] Phantom_Two',
+        name: 'AI_player',
         team: 'OMEGA',
         skinId: 'renegade_raider',
         x: 24,
@@ -301,7 +301,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
       };
       engine.bots.push(bot);
 
-      const rig = buildSphereCharacterRig(preset.skinId, bot.weapon.type, bot.weapon.rarity, preset.tint);
+      const rig = buildCharacterModel(preset.skinId, bot.weapon.type, bot.weapon.rarity);
       rig.root.position.set(bot.x, bot.y, bot.z);
 
       const nameTag = createNameTagSprite(
@@ -338,24 +338,9 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
   ].filter(Boolean);
 
   const enemyTeams: TeamType[] = ['OMEGA', 'SHADOW', 'PHOENIX'];
-  const rankPrefixes = ['[PRO]', '[ELITE]', '[ALPHA]', '[CHAMPION]', '[UNREAL]', '[MASTER]'];
-  const skinNameMap: Record<string, string> = {
-    jonesy: 'Jonesy',
-    ramirez: 'Ramirez',
-    peely: 'Peely',
-    midas: 'Midas',
-    drift: 'Drift',
-    black_knight: 'Knight',
-    renegade_raider: 'Renegade',
-    goku: 'Goku',
-  };
 
   for (let i = 0; i < count; i++) {
     const skin = FORTNITE_SKINS[i % FORTNITE_SKINS.length];
-    const rank = rankPrefixes[i % rankPrefixes.length];
-    const skinBase = skinNameMap[skin.id] || skin.name.split(' ')[0];
-    const tagNum = Math.floor(1000 + ((i * 1337 + 4021) % 8999));
-    const name = `${rank} ${skinBase}#${tagNum}`;
     const poi = ISLAND_POIS[i % ISLAND_POIS.length];
     const wepPreset = botWeapons[i % botWeapons.length];
     const team = enemyTeams[i % enemyTeams.length];
@@ -369,7 +354,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
 
     const bot: BotPlayer = {
       id: `bot_${i}`,
-      name,
+      name: 'AI_player',
       isAI: true,
       team,
       skinId: skin.id,
@@ -398,7 +383,7 @@ export function spawnBotsImpl(engine: FortniteEngine, count: number) {
     engine.bots.push(bot);
 
     // Character Rig with Name Tag sprite (Sphere Character Rig)
-    const rig = buildSphereCharacterRig(skin.id, bot.weapon.type, bot.weapon.rarity);
+    const rig = buildCharacterModel(skin.id, bot.weapon.type, bot.weapon.rarity);
     rig.root.position.set(x, y, z);
 
     const nameTag = createNameTagSprite(
@@ -423,7 +408,7 @@ export function setupMultiplayerImpl(engine: FortniteEngine) {
       let remote = engine.remotePlayers.get(playerId);
       if (!remote) {
         const skinId = data.skinId || 'jonesy';
-        const rig = buildSphereCharacterRig(skinId, data.activeWeaponType || 'ar', data.weaponRarity || 'epic');
+        const rig = buildCharacterModel(skinId, data.activeWeaponType || 'ar', data.weaponRarity || 'epic');
         engine.scene.add(rig.root);
         remote = {
           state: {
